@@ -115,6 +115,32 @@ int estTcpConn(struct network *net, const char *host, const char *service) {
     logMessage("Connection established");
     return 1;
 }
+
+int getSSLerror(SSL *ssl, ret){
+    int err = SSL_get_error(ssl, ret);
+    if (err == SSL_ERROR_NONE) {
+        // return NOER;
+    }
+    SSL_load_error_strings();
+    char errmes[SSL_ERMES_SIZE] = {0};
+    switch (err)
+    {
+        //TODO: check another errors
+        case SSL_ERROR_ZERO_RETURN:
+        {
+            ERR_error_string_n(err, errmes, SSL_ERMES_SIZE);
+            logSSLError(errmes);
+            break;
+        }
+
+        default:
+        {
+            fprintf(stderr, "SSL read error: %i:%i\n", bytes_rec, err);
+            break;
+        }
+    }
+    ERR_free_strings();
+}
 /*            printf("\n%.*s\n", bytes_rec, read+total_rec);
             ssize_t nparsed = http_parser_execute(parser, settings, read + total_rec, bytes_rec);
              
@@ -250,5 +276,10 @@ void freeNetworkStruct(struct network *net){
     free(settings);
 
     free(net->read);
+    
+    SSL_free(net->ssl);
+    close(net->socket_peer);
+    SSL_CTX_free(net->ctx);
+
     free(net);
 }

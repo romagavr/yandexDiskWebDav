@@ -35,6 +35,10 @@ void logLibError(error_t err){
   }
 };
 
+void logSSLError(const char *message){
+    fprintf(stderr, "Smth go wrong in SSL: %s\n", messsage);
+};
+
 void logErrno(const char *msg){
     fprintf(stderr, "Error: %s - (%d: %s)", msg, errno, strerror(errno));
 }

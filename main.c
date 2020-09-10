@@ -28,9 +28,7 @@ int main(int argc, char *argv[]){
         exit(EXIT_FAILURE);
     }
     printf("Closing socket...\n");
-    SSL_free(ssl);
-    close(socket_peer);
-    SSL_CTX_free(ctx);
+
     printf("Finished.\n");
     */
     //free(xml);

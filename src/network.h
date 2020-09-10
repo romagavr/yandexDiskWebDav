@@ -33,6 +33,8 @@
 #define BODY_SIZE 3000
 #define RAW_SIZE 5000
 
+#define SSL_ERMES_SIZE 300
+
 struct network {
     http_parser_settings *settings;
     http_parser *parser;
