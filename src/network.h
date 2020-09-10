@@ -18,6 +18,8 @@
 #include<libxml/parser.h>
 #include<libxml/tree.h>
 
+#include"error.c"
+
 #include"../lib/http-parser/http_parser.h"
 
 #define HOST "oauth.yandex.ru"

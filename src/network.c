@@ -63,17 +63,17 @@ int on_body(http_parser *parser, const char* data, size_t length) {
 }
 
 int estTcpConn(struct network *net, const char *host, const char *service) {
-    printf("Configuring remote address...\n");
+    logMessage("Establishing TCP connection");
 
     struct addrinfo hints;
     memset(&hints, 0, sizeof(struct addrinfo));
     hints.ai_socktype = SOCK_STREAM;
-    struct addrinfo *peer_address;
+    struct addrinfo *peer_address = 0;
     if (getaddrinfo(host, service, &hints, &peer_address)) {
-        fprintf(stderr, "geraddrinfo() failed. (%d)\n", errno);
-        return -1;
+        logErrno("geraddrinfo() failed")
+        return E_EST_CONN;
     }
-   
+  /* 
     char address_buffer[100];
     char service_buffer[100];
     getnameinfo(peer_address->ai_addr, peer_address->ai_addrlen, address_buffer,
@@ -81,24 +81,18 @@ int estTcpConn(struct network *net, const char *host, const char *service) {
                 service_buffer, sizeof(service_buffer),
                 NI_NUMERICHOST);
     printf("Remote address is: %s %s\n", address_buffer, service_buffer);
-
-    printf("Creating socket...\n");
+*/
     int socket_peer = socket(peer_address->ai_family, peer_address->ai_socktype, peer_address->ai_protocol);
     if (socket_peer < 0) {
-        fprintf(stderr, "socket() failed. (%d)\n", errno);
-        return -1;
+        logErrno("socket() failed")
+        return E_EST_CONN;
     }
-    
-    printf("Connecting...\n");
+
     if (connect(socket_peer, peer_address->ai_addr, peer_address->ai_addrlen)) {
-        fprintf(stderr, "connect() failed. (%d)\n", errno);
-        return -1;
+        logErrno("connect() failed")
+        return E_EST_CONN;
     }
     freeaddrinfo(peer_address);
-
-    printf("Connected.\n");
-
-    printf("Openning ssl connection.\n");
 
     OpenSSL_add_all_algorithms();
     SSL_METHOD *method = SSLv23_client_method();
@@ -113,12 +107,12 @@ int estTcpConn(struct network *net, const char *host, const char *service) {
         fprintf(stderr, "SSL connect failed. (%d)\n", errno);
         return -1;
     }
-    printf("SSL connected.\n");
 
     net->socket_peer = socket_peer;
     net->ctx = ctx;
     net->ssl = ssl;
 
+    logMessage("Connection established");
     return 1;
 }
 /*            printf("\n%.*s\n", bytes_rec, read+total_rec);
