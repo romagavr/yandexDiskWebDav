@@ -6,8 +6,9 @@
 typedef enum errors {
     E_SUCCESS,
     E_EST_CONN,
-    E_ERROR2,
-    E_ERROR3,
+    E_PEER_CLOSED_CONN,
+    E_SSL_FATAL,
+    E_HTTP_PARSER_FAILED,
     ERROR_COUNT,
 } error_t;
 
@@ -17,7 +18,8 @@ const char *const errArr[] =
     "OK",
     "Error1",
     "Error2",
-    "Error3"
+    "Error3",
+    "Error4"
 };
 
 static const char* getError(error_t err){
@@ -37,6 +39,10 @@ void logLibError(error_t err){
 
 void logSSLError(const char *message){
     fprintf(stderr, "Smth go wrong in SSL: %s\n", messsage);
+};
+
+void logHParserError(const char *message){
+    fprintf(stderr, "Smth go wrong in HTTP_PARSER: %s\n", messsage);
 };
 
 void logErrno(const char *msg){

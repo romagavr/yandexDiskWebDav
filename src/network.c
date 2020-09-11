@@ -35,6 +35,7 @@ int on_header_value(http_parser *parser, const char *data, size_t length) {
 
 int on_message_begin(http_parser *parser) {
   struct message *m = (struct message *)parser->data;
+  messageReset(m);
   m->message_begin_cb_called = 1;
   printf("\n***MESSAGE BEGIN***\n\n");
   return 0;
@@ -55,10 +56,21 @@ int on_message_complete(http_parser *parser) {
   return 0;
 }
 
+//TODO обработка ошибок в call_back
 int on_body(http_parser *parser, const char* data, size_t length) {
   struct message *m = (struct message *)parser->data;
-  strncat(m->body, data, length);
-  printf("Body: %.*s\n", (int)length, data);
+  int t_len = m->parsed_length + length;
+  if (t_len > m->body_size){
+      char *new = realloc(m->body, t_len);
+      if (new == 0){
+         return HPE_CB_body;
+      }
+      m->body = new;
+      m->body_size = t_len;
+  }
+  strncat(m->body + m->parsed_length, data, length);
+  m->parsed_length = t_len;
+  //printf("Body: %.*s\n", (int)length, data);
   return 0;
 }
 
@@ -118,28 +130,39 @@ int estTcpConn(struct network *net, const char *host, const char *service) {
 
 int getSSLerror(SSL *ssl, ret){
     int err = SSL_get_error(ssl, ret);
-    if (err == SSL_ERROR_NONE) {
-        // return NOER;
-    }
     SSL_load_error_strings();
     char errmes[SSL_ERMES_SIZE] = {0};
+    int r_error;
     switch (err)
     {
         //TODO: check another errors
         case SSL_ERROR_ZERO_RETURN:
         {
+            // Connection closed
             ERR_error_string_n(err, errmes, SSL_ERMES_SIZE);
             logSSLError(errmes);
+            r_error = E_PEER_CLOSED_CONN;
+            break;
+        }
+
+        case SSL_ERROR_SSL:
+        {
+            // Fatal error
+            ERR_error_string_n(err, errmes, SSL_ERMES_SIZE);
+            logSSLError(errmes);
+            r_error = E_SSL_FATAL;
             break;
         }
 
         default:
         {
-            fprintf(stderr, "SSL read error: %i:%i\n", bytes_rec, err);
+            logSSLError("Uncaught error");
+            r_error = E_SSL_FATAL;
             break;
         }
     }
     ERR_free_strings();
+    return r_error;
 }
 /*            printf("\n%.*s\n", bytes_rec, read+total_rec);
             ssize_t nparsed = http_parser_execute(parser, settings, read + total_rec, bytes_rec);
@@ -155,47 +178,76 @@ int getSSLerror(SSL *ssl, ret){
             }
             printf("\nRaw: %hhx", m->body); */
 
-ssize_t socketWrite(const char *req, size_t reqLen, struct network *net){
-    int bytes_sent = 0, bytes_rec = 0;
+static int socketRead(struct network *net){
+    int bytes_rec = 0;
+    int ret;
     struct message *m = (struct message *)net->parser->data;
 
-    // TODO: Обработка отправки
-    bytes_sent = SSL_write(net->ssl, req, reqLen);
-    printf("Sent\n");
-    // TODO: очистка message структуры
     // TODO: Timeout - если долго нет ответа
     while (1){
-        // TODO: память - проверка на достаточность
-        // TODO: проверка статуса ответа
         memset(net->read, 0, RECEIVE_BUFFER_SIZE);
         bytes_rec = SSL_read(net->ssl, net->read, RECEIVE_BUFFER_SIZE);
         if (bytes_rec > 0) {
             ssize_t nparsed = http_parser_execute(net->parser, net->settings, net->read, bytes_rec);
-            // Проверка ошибок http_parser
-            printf("\nNparsed: %d\n", nparsed);
-            if (m->message_complete_cb_called)
-                break;
-        } else {
-            int err = SSL_get_error(net->ssl, bytes_rec);
-            switch (err)
-            {
-                //TODO: check another errors
-                case SSL_ERROR_ZERO_RETURN:
-                {
-                    fprintf(stderr, "SSL_ERROR_ZERO_RETURN (peer disconnected) %i\n", err);
-                    break;
-                }
 
-                default:
-                {
-                    fprintf(stderr, "SSL read error: %i:%i\n", bytes_rec, err);
-                    break;
-                }
+            if (net->parser->http_errno != 0){
+                logHParserError(HTTP_PARSER_ERRNO(net->parser));
+                ret = E_HTTP_PARSER_FAILED;
+                break;
             }
+            if (m->message_complete_cb_called) {
+                ret = E_SUCCESS;
+                break;
+            }
+        } else {
+            ret = getSSLerror(net->ssl, bytes_rec);
             break;
         }
     }  
-    return 1;
+    return ret;
+}
+
+static int socketWrite(const char *req, size_t reqLen, SSL *ssl){
+    int bytes_sent = 0;
+
+    bytes_sent = SSL_write(ssl, req, reqLen);
+    if (bytes_sent <= 0) {
+        return getSSLerror(ssl, bytes_sent);
+    }  
+    return E_SUCCESS;
+}
+
+int send(const char *request, size_t size, struct network *net){
+    int ret = socketWrite(request, size, net->ssl);
+    if (ret != E_SUCCESS){
+        return E_SEND;
+    }
+    ret = socketRead(net);
+    if (ret != E_SUCCESS){
+        return ret;
+    }
+    return ret;
+}
+
+static void messageReset(struct message *m){
+    m->status = 0;
+    memset(m->body, 0, m->body_size);
+    m->content_length = 0;
+    m->parsed_length = 0;
+    m->last_header_element = 0;
+    m->num_headers = 0;
+
+    m->message_begin_cb_called = 0;
+    m->message_complete_cb_called = 0;
+    m->headers_complete_cb_called = 0;
+
+    m->chunked = 0;
+    m->chunk_length = 0;
+    
+    for (int i=0; i< MAX_HEADERS_COUNT; i++){
+        memset(m->headers[i][0], 0, MAX_ELEMENT_HEADER_SIZE);
+        memset(m->headers[i][1], 0, MAX_ELEMENT_HEADER_SIZE);
+    }
 }
 
 // TODO: при ошибке - очистка памяти
@@ -243,19 +295,14 @@ struct network* initNetworkStruct(){
         fprintf(stderr,"initNetworkStruct(): Message malloc error\n");
         return 0;
     }
-    memset(m, 0, sizeof(struct message));
-    m->body = malloc(BODY_SIZE);
+    m->body_size = BODY_SIZE;
+    m->body = malloc(m->body_size);
     if (m->body == 0) {
         fprintf(stderr,"initNetworkStruct(): Message malloc error\n");
         return 0;
     }
-    memset(m->body, 0, BODY_SIZE);
-    m->raw = malloc(RAW_SIZE);
-    if (m->raw == 0) {
-        fprintf(stderr,"initNetworkStruct(): Message malloc error\n");
-        return 0;
-    }
-    memset(m->raw, 0, RAW_SIZE);
+    messageReset(m);
+
     parser->data = m;
 
     net->parser = parser;
@@ -270,7 +317,6 @@ void freeNetworkStruct(struct network *net){
 
     struct message *m = (struct message *)parser->data;
     free(m->body);
-    free(m->raw);
     free(m);
     free(parser);
     free(settings);
