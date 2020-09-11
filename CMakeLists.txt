@@ -6,8 +6,8 @@ project(client)
 set(SRC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 set(LIB ${CMAKE_CURRENT_SOURCE_DIR}/lib)
 
-set(SOURCE_FILES ${SRC}/network.c ${SRC}/client.c ${LIB}/http-parser/http_parser.c)
-set(HEADER_FILES ${SRC}/network.h ${SRC}/client.h ${LIB}/http-parser/http_parser.h)
+set(SOURCE_FILES ${SRC}/network.c ${SRC}/client.c ${LIB}/http-parser/http_parser.c ${SRC}/error.c)
+set(HEADER_FILES ${SRC}/network.h ${SRC}/client.h ${LIB}/http-parser/http_parser.h ${SRC}/error.h)
 set(MAIN ${CMAKE_CURRENT_SOURCE_DIR}/main.c)
 
 add_executable(${PROJECT_NAME} ${SOURCE_FILES} ${HEADER_FILES} ${MAIN})

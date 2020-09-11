@@ -1,6 +1,6 @@
 #include"client.h"
 
-
+/*
 int getToken(){
     SSL *ssl = 0;
     SSL_CTX *ctx = 0; 
@@ -11,7 +11,7 @@ int getToken(){
     char sendline[MAXLINE+1];
     char read[MAXLINE+1];
     int bytes_sent, bytes_received; 
-
+*/
     /*snprintf(sendline, MAXLINE,
 		"GET /authorize?response_type=code&client_id=%s HTTP/1.1\r\n"
 		"Host: %s\r\n\r\n", CLIENT_ID, HOST);
@@ -22,7 +22,7 @@ int getToken(){
     if (bytes_received < 1) 
 	    printf("Connection closed by peer.\n");
     printf("Received (%d bytes): %.*s", bytes_received, bytes_received, read);*/
-
+/*
     const char *body = "grant_type=authorization_code&code="CODE
                        "&client_id="CLIENT_ID"&client_secret="CLIENT_SECRET;
     snprintf(sendline, MAXLINE,
@@ -45,7 +45,7 @@ int getToken(){
     SSL_CTX_free(ctx);
 
     return 0;
-}
+}*/
 
 void print_element_names(xmlNode *a_node)
 {
@@ -67,9 +67,8 @@ ssize_t getFolderStruct(const char *folder, struct network *net) {
         "Depth: 1\r\n"
         "Authorization: OAuth %s\r\n\r\n", folder, WHOST, TOKEN);
 
-    int res = socketWrite(sendline, strlen(sendline), net);
-    if (res == 0) {
-        fprintf(stderr, "Error in socketWrite\n");
+    int res = send_to(sendline, strlen(sendline), net);
+    if (res != E_SUCCESS) {
         return 0;
     }
     struct message *m = (struct message *)net->parser->data;
@@ -87,7 +86,7 @@ ssize_t getFolderStruct(const char *folder, struct network *net) {
 
     return 1;
 }
-
+/*
 int fileUpload(const char *file, long int file_size, const char *remPath, struct network *net) {
     SSL *ssl = net->ssl;
 
@@ -130,7 +129,7 @@ int fileUpload(const char *file, long int file_size, const char *remPath, struct
 
     const char *req = "PUT %s HTTP/1.1\r\n"
                       "Host: %s\r\n"
-                      "Accept: */*\r\n"
+                      "Accept: *\/*\r\n" // убрать \
                       "Authorization: OAuth %s\r\n"
                       "Etag: %s\r\n"
                       "Sha256: %s\r\n"
@@ -258,3 +257,4 @@ int uploadFile(const char *localPath, const char *remotePath, struct network *ne
     }
     return 0;
 }
+*/

@@ -18,7 +18,7 @@
 #include<libxml/parser.h>
 #include<libxml/tree.h>
 
-#include"error.c"
+#include"error.h"
 
 #include"../lib/http-parser/http_parser.h"
 
@@ -33,6 +33,7 @@
 #define BODY_SIZE 3000
 
 #define SSL_ERMES_SIZE 300
+
 
 struct network {
     http_parser_settings *settings;
@@ -74,12 +75,15 @@ int on_headers_complete(http_parser *parser);
 int on_message_complete(http_parser *parser);
 int on_body(http_parser *parser, const char* data, size_t length);
         
-int estTcpConn(struct network *net, const char *host, const char *service);
+int connect_to(struct network *net, const char *host);
 
 static int socketRead(struct network *net);
-static int socketWrite(const char *req, size_t reqLen, struct network *net);
-int send(const char *request, size_t size, struct network *net);
+static int socketWrite(const char *request, size_t size, SSL *ssl);
+int send_to(const char *request, size_t size, struct network *net);
 
-struct network* initNetworkStruct();
+int initNetworkStruct(struct network **netw);
 void freeNetworkStruct(struct network *net);
 
+
+static int getSSLerror(SSL *ssl, int ret);
+static void messageReset(struct message *m);
