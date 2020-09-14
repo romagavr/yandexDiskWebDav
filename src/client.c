@@ -58,7 +58,38 @@ void print_element_names(xmlNode *a_node)
     }
 }
 
+int getSpaceInfo(struct network *net) {
+    char *body = "<?xml version=\"1.0\" ?>"
+                 "<D:propfind xmlns:D=\"DAV:\">"
+                    "<D:prop>"
+                        "<D:quota-available-bytes/>"
+                        "<D:quota-used-bytes/>"
+                    "</D:prop>"
+                 "</D:propfind>";
+    
+    char *sendline = malloc(MAXLINE+1);
+    snprintf(sendline, MAXLINE,
+		"PROPFIND / HTTP/1.1\r\n"
+		"Host: %s\r\n"
+        "Accept: */*\r\n"
+        "Depth: 0\r\n"
+        "Content-Type: text/xml\r\n"
+        "Content-Length: %d\r\n"
+        "Authorization: OAuth %s\r\n\r\n%s",  WHOST, strlen(body), TOKEN, body);
+
+    int res = send_to(sendline, strlen(sendline), net);
+    if (res != E_SUCCESS) {
+        return 0;
+    }
+    struct message *m = (struct message *)net->parser->data;
+    printf("Body: %s\n", m->body);
+    if (m->status == 404 || m->status == 400)
+        return 0;
+}
+
 ssize_t getFolderStruct(const char *folder, struct network *net) {
+    getSpaceInfo(net);
+    exit(1);
     char *sendline = malloc(MAXLINE+1);
     snprintf(sendline, MAXLINE,
 		"PROPFIND %s HTTP/1.1\r\n"
@@ -72,6 +103,7 @@ ssize_t getFolderStruct(const char *folder, struct network *net) {
         return 0;
     }
     struct message *m = (struct message *)net->parser->data;
+    printf("Body: %s\n", m->body);
     if (m->status == 404 || m->status == 400)
         return 0;
     if (m->content_length > 0){
