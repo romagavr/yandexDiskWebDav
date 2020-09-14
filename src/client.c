@@ -1,5 +1,38 @@
 #include"client.h"
 
+struct file_info {
+    char *file_url;
+    char *getetag;
+    char *mulca_file_url;
+    char *getcontenttype;
+    char *getcontentlength;
+    char *mulca_digest_url;
+};
+
+struct item {
+    char *href;
+    char *creationdate;
+    char *displayname;
+    char *getlastmodified;
+
+    struct item *children;
+    struct item *next;
+    struct file_info *info;
+};
+
+struct file_system{
+    struct item *head;
+    int free_space;
+    int total_space; 
+};
+//TODO: traverse remote filesystem
+//TODO: if lastModify > last_traversed_remote
+//          add file/collection to download queue
+//TODO: set inoify on folder and inner entities
+int item_construct(struct file_system *fs){
+
+}
+
 /*
 int getToken(){
     SSL *ssl = 0;
@@ -61,10 +94,11 @@ void print_element_names(xmlNode *a_node)
 int getSpaceInfo(struct network *net) {
     char *body = "<?xml version=\"1.0\" ?>"
                  "<D:propfind xmlns:D=\"DAV:\">"
-                    "<D:prop>"
-                        "<D:quota-available-bytes/>"
-                        "<D:quota-used-bytes/>"
-                    "</D:prop>"
+                 "<D:allprop />"
+                    //"<D:prop>"
+                    //    "<D:quota-available-bytes/>"
+                    //    "<D:quota-used-bytes/>"
+                    //"</D:prop>"
                  "</D:propfind>";
     
     char *sendline = malloc(MAXLINE+1);
@@ -88,8 +122,8 @@ int getSpaceInfo(struct network *net) {
 }
 
 ssize_t getFolderStruct(const char *folder, struct network *net) {
-    getSpaceInfo(net);
-    exit(1);
+    //getSpaceInfo(net);
+    //exit(1);
     char *sendline = malloc(MAXLINE+1);
     snprintf(sendline, MAXLINE,
 		"PROPFIND %s HTTP/1.1\r\n"
