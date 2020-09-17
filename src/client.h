@@ -21,9 +21,36 @@
 #define MAXLINE 5000
 #define HEADER_LEN 1000
 
+#define S_ITEM_LEN 200
 
-int getToken();
+struct file_info {
+    char file_url[S_ITEM_LEN];
+    char getetag[S_ITEM_LEN];
+    char mulca_file_url[S_ITEM_LEN];
+    char getcontenttype[S_ITEM_LEN];
+    char getcontentlength[S_ITEM_LEN];
+    char mulca_digest_url[S_ITEM_LEN];
+};
+
+struct item {
+    char href[S_ITEM_LEN];
+    char creationdate[S_ITEM_LEN];
+    char displayname[S_ITEM_LEN];
+    char getlastmodified[S_ITEM_LEN];
+
+    struct item *next;
+    struct file_info *info;
+};
+
+struct file_system{
+    struct item *head;
+    int free_space;
+    int total_space; 
+};
+
+int getToken(void);
 void print_element_names(xmlNode *a_node);
+void traverseXML(xmlNode *a_node, struct item *head);
 ssize_t getFolderStruct(const char *folder, struct network *net);
 int fileUpload(const char *file, long int file_size, const char *remPath, struct network *net); 
 int uploadFile(const char *localPath, const char *remotePath, struct network *net);

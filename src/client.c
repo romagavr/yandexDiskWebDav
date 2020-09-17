@@ -1,30 +1,6 @@
 #include"client.h"
 
-struct file_info {
-    char *file_url;
-    char *getetag;
-    char *mulca_file_url;
-    char *getcontenttype;
-    char *getcontentlength;
-    char *mulca_digest_url;
-};
 
-struct item {
-    char *href;
-    char *creationdate;
-    char *displayname;
-    char *getlastmodified;
-
-    struct item *children;
-    struct item *next;
-    struct file_info *info;
-};
-
-struct file_system{
-    struct item *head;
-    int free_space;
-    int total_space; 
-};
 //TODO: traverse remote filesystem
 //TODO: if lastModify > last_traversed_remote
 //          add file/collection to download queue
@@ -80,14 +56,69 @@ int getToken(){
     return 0;
 }*/
 
-void print_element_names(xmlNode *a_node)
-{
-    xmlNode *cur_node = NULL;
-    for (cur_node = a_node; cur_node; cur_node = cur_node->next) {
-        if (cur_node->type == XML_ELEMENT_NODE && strcmp(cur_node->name, "href") == 0) {
-            printf("%s\n", xmlNodeGetContent(cur_node));
+void traverseXML(xmlNode *a_node, struct item *head) {
+    static int count = 0;
+    for (xmlNode *node = a_node; node; node = node->next) {
+        if (node->type == XML_ELEMENT_NODE){
+            if (strcmp(node->name, "response") == 0) { 
+                if (count != 0) {
+                    struct item *tmp = malloc(sizeof *tmp); 
+                    memset(tmp, 0, sizeof *tmp);
+                    head->next = tmp;
+                    head = tmp;
+                }
+                count++;
+            } else if (strcmp(node->name, "href") == 0) { 
+                strcpy(head->href, xmlNodeGetContent(node));
+            } else if (strcmp(node->name, "creationdate") == 0) { 
+                strcpy(head->creationdate, xmlNodeGetContent(node));
+            } else if (strcmp(node->name, "displayname") == 0) { 
+                strcpy(head->displayname, xmlNodeGetContent(node));
+            } else if (strcmp(node->name, "getlastmodified") == 0) { 
+                strcpy(head->getlastmodified, xmlNodeGetContent(node));
+            } else if (strcmp(node->name, "file_url") == 0) { 
+                if (head->info == 0) {
+                    head->info = malloc(sizeof(head->info));
+                }
+                strcpy(head->info->file_url, xmlNodeGetContent(node));
+            } else if (strcmp(node->name, "getetag") == 0) { 
+                if (head->info == 0) {
+                    head->info = malloc(sizeof(head->info));
+                }
+                strcpy(head->info->getetag, xmlNodeGetContent(node));
+            } else if (strcmp(node->name, "mulca_file_url") == 0) { 
+                if (head->info == 0) {
+                    head->info = malloc(sizeof(head->info));
+                }
+                strcpy(head->info->mulca_file_url, xmlNodeGetContent(node));
+            } else if (strcmp(node->name, "mulca_digest_url") == 0) { 
+                if (head->info == 0) {
+                    head->info = malloc(sizeof(head->info));
+                }
+                strcpy(head->info->mulca_digest_url, xmlNodeGetContent(node));
+            } else if (strcmp(node->name, "getcontenttype") == 0) { 
+                if (head->info == 0) {
+                    head->info = malloc(sizeof(head->info));
+                }
+                strcpy(head->info->getcontenttype, xmlNodeGetContent(node));
+            } else if (strcmp(node->name, "getcontentlength") == 0) { 
+                if (head->info == 0) {
+                    head->info = malloc(sizeof(head->info));
+                }
+                strcpy(head->info->getcontentlength, xmlNodeGetContent(node));
+            }
         }
-        print_element_names(cur_node->children);
+        traverseXML(node->children, head);
+    }
+}
+
+void printItems(struct item *head){
+    while(head->next != 0){
+        if (head->info == 0)
+            printf("Folder: %s\n", head->href);
+        else
+            printf("File: %s\n", head->displayname);
+        head = head->next;
     }
 }
 
@@ -147,7 +178,12 @@ ssize_t getFolderStruct(const char *folder, struct network *net) {
         doc = xmlParseDoc(m->body);
         root_element = xmlDocGetRootElement(doc);
         //TODO: Надо бы тут сделать парсинг удаленных дирeкторий B-tree??
-        print_element_names(root_element);
+
+        struct item *head = malloc(sizeof *head); 
+        memset(head, 0, sizeof *head);
+        traverseXML(root_element, head);
+        printItems(head);
+        //print_element_names(root_element);
     }
 
     return 1;
