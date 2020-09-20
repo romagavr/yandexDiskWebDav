@@ -22,24 +22,39 @@
 #define HEADER_LEN 1000
 
 #define S_ITEM_LEN 200
+#define MAX_NODES 300 
+#define MAX_LEAFS 300 
 
-struct file_info {
+struct info {
+    char href[S_ITEM_LEN];
+    char creationdate[S_ITEM_LEN];
+    char displayname[S_ITEM_LEN];
+    char getlastmodified[S_ITEM_LEN];
+};
+
+typedef struct Node {
+    struct info *info;
+    
+    struct Node* nodes[MAX_NODES];
+    struct Leaf* leafs[MAX_LEAFS];
+
+    size_t leafs_count;
+    size_t nodes_count;
+} Node;
+
+typedef struct Leaf {
+    struct info *info;
+    struct fileInfo *fileinfo;
+} Leaf;
+
+
+struct fileInfo {
     char file_url[S_ITEM_LEN];
     char getetag[S_ITEM_LEN];
     char mulca_file_url[S_ITEM_LEN];
     char getcontenttype[S_ITEM_LEN];
     char getcontentlength[S_ITEM_LEN];
     char mulca_digest_url[S_ITEM_LEN];
-};
-
-struct item {
-    char href[S_ITEM_LEN];
-    char creationdate[S_ITEM_LEN];
-    char displayname[S_ITEM_LEN];
-    char getlastmodified[S_ITEM_LEN];
-
-    struct item *next;
-    struct file_info *info;
 };
 
 struct file_system{
@@ -50,7 +65,15 @@ struct file_system{
 
 int getToken(void);
 void print_element_names(xmlNode *a_node);
-void traverseXML(xmlNode *a_node, struct item *head);
+//void traverseXML(xmlNode *a_node, struct item *head);
 ssize_t getFolderStruct(const char *folder, struct network *net);
 int fileUpload(const char *file, long int file_size, const char *remPath, struct network *net); 
 int uploadFile(const char *localPath, const char *remotePath, struct network *net);
+
+static xmlNode* getFolderXml(const char *folder, struct network *net);
+static Leaf* createNewLeaf(void);
+static void parseXML(xmlNode *a_node, Node *node, Leaf *leaf);
+static void createFolderNode(Node *node, struct network *net);
+Node* getRemoteFSTree(const char *rootPath, struct network *net);
+
+void treeTraverse(Node *node);

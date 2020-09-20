@@ -13,12 +13,13 @@ int main(int argc, char *argv[]){
         return 1;
     }
 
+    getRemoteFSTree("/", net);
     // без слэша в начале  - 400
     // если нет такой директории - 404
     // в остальных случаях - 207
-    if (getFolderStruct("/Others/", net) < 0) {
-        exit(EXIT_FAILURE);
-    }; 
+    //if (getFolderStruct("/Others/", net) < 0) {
+    //    exit(EXIT_FAILURE);
+    //}; 
 /*
     //getToken(ssl);
     int res = uploadFile("../res/2.png", "/", ssl);

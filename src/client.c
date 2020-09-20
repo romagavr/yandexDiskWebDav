@@ -55,7 +55,181 @@ int getToken(){
 
     return 0;
 }*/
+static xmlNode* getFolderXml(const char *folder, struct network *net) {
 
+    char *sendline = malloc(MAXLINE+1);
+    snprintf(sendline, MAXLINE,
+		"PROPFIND %s HTTP/1.1\r\n"
+		"Host: %s\r\n"
+        "Accept: */*\r\n"
+        "Depth: 1\r\n"
+        "Authorization: OAuth %s\r\n\r\n", folder, WHOST, TOKEN);
+
+    int res = send_to(sendline, strlen(sendline), net);
+    if (res != E_SUCCESS) {
+        return 0;
+    }
+    struct message *m = (struct message *)net->parser->data;
+    if (m->status == 429){
+        for (int i=0; i< m->num_headers; i++){
+            printf("%s: %s\n", m->headers[i][0], m->headers[i][1]);
+        }
+        printf("Body: %s\n", m->body);
+    }
+    //printf("Body: %s\n", m->body);
+    printf("Body size: %d\n", m->body_size);
+    if (m->status == 404 || m->status == 400)
+        return 0;
+    if (m->content_length = 0)
+        return 0;
+
+    LIBXML_TEST_VERSION
+    xmlNode *root_element = 0;
+    xmlDoc *doc = 0;
+    doc = xmlParseDoc(m->body);
+    root_element = xmlDocGetRootElement(doc);
+
+    return root_element;
+}
+
+static Leaf* createNewLeaf(void){
+    Leaf *leaf = malloc(sizeof *leaf);
+    memset(leaf, 0, sizeof *leaf);
+    leaf->info = malloc(sizeof *leaf->info);
+    memset(leaf->info, 0, sizeof *leaf->info);
+    leaf->fileinfo = malloc(sizeof *leaf->fileinfo);
+    memset(leaf->fileinfo, 0, sizeof *leaf->fileinfo);
+    return leaf;
+}
+
+static void parseXML(xmlNode *a_node, Node *node, Leaf *leaf) {
+    int resp = 0;
+    int countResp = -1;
+    static char isFile = 0;
+    if (node == 0){
+        //TODO: exit
+    }
+    if (leaf == 0){
+        leaf = createNewLeaf();
+    }
+
+    for (xmlNode *xmlnd = a_node; xmlnd; xmlnd = xmlnd->next) {
+        if (xmlnd->type == XML_ELEMENT_NODE){
+            if (strcmp(xmlnd->name, "response") == 0) { 
+                countResp++;
+                if (countResp == 0) continue;
+                resp = 1;
+            } else if (strcmp(xmlnd->name, "href") == 0) { 
+                strcpy(leaf->info->href, xmlNodeGetContent(xmlnd));
+            } else if (strcmp(xmlnd->name, "creationdate") == 0) { 
+                strcpy(leaf->info->creationdate, xmlNodeGetContent(xmlnd));
+            } else if (strcmp(xmlnd->name, "displayname") == 0) { 
+                strcpy(leaf->info->displayname, xmlNodeGetContent(xmlnd));
+            } else if (strcmp(xmlnd->name, "getlastmodified") == 0) { 
+                strcpy(leaf->info->getlastmodified, xmlNodeGetContent(xmlnd));
+            } else if (strcmp(xmlnd->name, "file_url") == 0) { 
+                if (!isFile) isFile = 1;
+                strcpy(leaf->fileinfo->file_url, xmlNodeGetContent(xmlnd));
+            } else if (strcmp(xmlnd->name, "getetag") == 0) { 
+                if (!isFile) isFile = 1;
+                strcpy(leaf->fileinfo->getetag, xmlNodeGetContent(xmlnd));
+            } else if (strcmp(xmlnd->name, "mulca_file_url") == 0) { 
+                if (!isFile) isFile = 1;
+                strcpy(leaf->fileinfo->mulca_file_url, xmlNodeGetContent(xmlnd));
+            } else if (strcmp(xmlnd->name, "mulca_digest_url") == 0) { 
+                if (!isFile) isFile = 1;
+                strcpy(leaf->fileinfo->mulca_digest_url, xmlNodeGetContent(xmlnd));
+            } else if (strcmp(xmlnd->name, "getcontenttype") == 0) { 
+                if (!isFile) isFile = 1;
+                strcpy(leaf->fileinfo->getcontenttype, xmlNodeGetContent(xmlnd));
+            } else if (strcmp(xmlnd->name, "getcontentlength") == 0) { 
+                if (!isFile) isFile = 1;
+                strcpy(leaf->fileinfo->getcontentlength, xmlNodeGetContent(xmlnd));
+            }
+        }
+        parseXML(xmlnd->children, node, leaf);
+        if (resp == 1) {
+            if (isFile){
+                node->leafs[node->leafs_count] = leaf;
+                node->leafs_count++;
+
+                leaf = createNewLeaf();
+                isFile = 0;
+            } else {
+                Node *n = malloc(sizeof *n);
+                memset(n, 0, sizeof *n);
+                n->info = leaf->info;
+                node->nodes[node->nodes_count] = n;
+                node->nodes_count++;
+
+                leaf->info = malloc(sizeof *leaf->info);
+            }
+        }
+    }
+    //TODO: this is huina
+    if (resp == 1){
+        free(leaf->fileinfo);
+        free(leaf->info);
+        free(leaf);
+    }
+}
+
+static void createFolderNode(Node *node, struct network *net) {
+    //TODO: errorChecking
+    //logMessage(node->info->href);
+    xmlNode* root = getFolderXml(node->info->href, net);
+    parseXML(root, node, 0); 
+    xmlFreeNode(root);
+    for(size_t i = 0; i < node->nodes_count; i++) {
+        createFolderNode(node->nodes[i], net);
+    }
+}
+
+Node* getRemoteFSTree(const char *rootPath, struct network *net){
+    Node *root = malloc(sizeof *root);
+    memset(root, 0, sizeof *root);
+    root->info = malloc(sizeof *root->info);
+    memset(root->info, 0, sizeof *root->info);
+    //TODO: memcpy or strcpy ?? and in traverseXML too
+    memcpy(root->info->href, rootPath, strlen(rootPath) + 1);
+
+    createFolderNode(root, net);
+
+    treeTraverse(root);
+
+    return root;
+}
+
+void printLeaf(Leaf *leaf, int tab){
+    printf("%*sFile path: %s\n", tab, " ", leaf->info->href);
+    printf("%*s---Name: %s\n", tab, " ", leaf->info->displayname);
+    printf("%*s---Creation date: %s\n", tab, " ", leaf->info->creationdate);
+    printf("%*s---Last Modified: %s\n", tab, " ", leaf->info->getlastmodified);
+    printf("%*s---File Url: %s\n", tab, " ", leaf->fileinfo->file_url);
+    printf("%*s---Etag: %s\n", tab, " ", leaf->fileinfo->getetag);
+    printf("%*s---Mulca file url: %s\n", tab, " ", leaf->fileinfo->mulca_file_url);
+    printf("%*s---Content Type: %s\n", tab, " ", leaf->fileinfo->getcontenttype);
+    printf("%*s---Content Length: %s\n", tab, " ", leaf->fileinfo->getcontentlength);
+    printf("%*s---Mulca digest url: %s\n", tab, " ", leaf->fileinfo->mulca_digest_url);
+}
+
+void treeTraverse(Node *node){
+    static int tab = 1;
+    printf("%*sFolder path: %s\n", tab, " ", node->info->href);
+    printf("%*s---Name: %s\n", tab, " ", node->info->displayname);
+    printf("%*s---Creation date: %s\n", tab, " ", node->info->creationdate);
+    printf("%*s---Last Modified: %s\n", tab, " ", node->info->getlastmodified);
+    for (int i = 0; i < node->leafs_count; i++){
+        printLeaf(node->leafs[i], tab);
+    }
+    tab *= 2;
+    for (int i = 0; i < node->nodes_count; i++){
+        treeTraverse(node->nodes[i]);
+    }
+}
+
+///
+/*
 void traverseXML(xmlNode *a_node, struct item *head) {
     static int count = 0;
     for (xmlNode *node = a_node; node; node = node->next) {
@@ -121,7 +295,7 @@ void printItems(struct item *head){
         head = head->next;
     }
 }
-
+*/
 int getSpaceInfo(struct network *net) {
     char *body = "<?xml version=\"1.0\" ?>"
                  "<D:propfind xmlns:D=\"DAV:\">"
@@ -152,14 +326,14 @@ int getSpaceInfo(struct network *net) {
         return 0;
 }
 
-ssize_t getFolderStruct(const char *folder, struct network *net) {
+/*ssize_t getFolderStruct(const char *folder, struct network *net) {
     //getSpaceInfo(net);
     //exit(1);
     char *sendline = malloc(MAXLINE+1);
     snprintf(sendline, MAXLINE,
 		"PROPFIND %s HTTP/1.1\r\n"
 		"Host: %s\r\n"
-        "Accept: */*\r\n"
+        "Accept: *\/*\r\n" //slash UBRAT
         "Depth: 1\r\n"
         "Authorization: OAuth %s\r\n\r\n", folder, WHOST, TOKEN);
 
@@ -187,7 +361,7 @@ ssize_t getFolderStruct(const char *folder, struct network *net) {
     }
 
     return 1;
-}
+}*/
 /*
 int fileUpload(const char *file, long int file_size, const char *remPath, struct network *net) {
     SSL *ssl = net->ssl;

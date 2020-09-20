@@ -18,6 +18,7 @@ typedef enum errors {
     E_HTTP_PARSER_FAILED,
     E_SEND,
     E_MALLOC_FAILED,
+    E_TOO_MANY_REQ,
     ERROR_COUNT,
 } error_t;
 
@@ -30,7 +31,8 @@ static const char *const errArr[] =
     "Fatal error while SSL processing",
     "Erroe while parsing response",
     "Error while sending request",
-    "Error while allocating memory (malloc)"
+    "Error while allocating memory (malloc)",
+    "Warning - too many requests (status = 429)"
 };
 
 static const char* getError(error_t err);

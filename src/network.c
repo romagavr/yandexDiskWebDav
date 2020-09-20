@@ -6,7 +6,7 @@ int on_chunk_header(http_parser *parser) {
         m->chunked = 1;
     m->chunk_length = parser->content_length;
     m->content_length += parser->content_length;
-    printf("Chunk length: %d\n", parser->content_length);
+    //printf("Chunk length: %d\n", parser->content_length);
     return 0;
 }
 
@@ -21,7 +21,7 @@ int on_header_field(http_parser *parser, const char *data, size_t length) {
         m->num_headers++;
     strncat(m->headers[m->num_headers-1][0], data, length);
     m->last_header_element = FIELD;
-    printf("Header field: %.*s\n", (int)length, data);
+    ///printf("Header field: %.*s\n", (int)length, data);
     return 0;
 }
 
@@ -29,7 +29,7 @@ int on_header_value(http_parser *parser, const char *data, size_t length) {
     struct message *m = (struct message *)parser->data;
     strncat(m->headers[m->num_headers-1][1], data, length);
     m->last_header_element = VALUE;
-    printf("Header value: %.*s\n", (int)length, data);
+    //printf("Header value: %.*s\n", (int)length, data);
     return 0;
 }
 
@@ -37,22 +37,22 @@ int on_message_begin(http_parser *parser) {
   struct message *m = (struct message *)parser->data;
   messageReset(m);
   m->message_begin_cb_called = 1;
-  printf("\n***MESSAGE BEGIN***\n\n");
+  //printf("\n***MESSAGE BEGIN***\n\n");
   return 0;
 }
 
 int on_headers_complete(http_parser *parser) {
   struct message *m = (struct message *)parser->data;
+  m->status = parser->status_code;
   m->headers_complete_cb_called = 1;
-  printf("\n***HEADERS COMPLETE***\n\n");
+  //printf("\n***HEADERS COMPLETE***\n\n");
   return 0;
 }
 
 int on_message_complete(http_parser *parser) {
   struct message *m = (struct message *)parser->data;
-  m->status = parser->status_code;
   m->message_complete_cb_called = 1;
-  printf("\n***MESSAGE COMPLETE***\n\n");
+  //printf("\n***MESSAGE COMPLETE***\n\n");
   return 0;
 }
 
@@ -61,16 +61,15 @@ int on_body(http_parser *parser, const char* data, size_t length) {
   struct message *m = (struct message *)parser->data;
   int t_len = m->parsed_length + length;
   if (t_len > m->body_size){
-      char *new = realloc(m->body, t_len);
+      char *new = realloc(m->body, t_len * 2);
       if (new == 0){
          return HPE_CB_body;
       }
       m->body = new;
-      m->body_size = t_len;
+      m->body_size = t_len * 2;
   }
   strncat(m->body + m->parsed_length, data, length);
   m->parsed_length = t_len;
-  //printf("Body: %.*s\n", (int)length, data);
   return 0;
 }
 
@@ -189,12 +188,16 @@ static int socketRead(struct network *net){
         bytes_rec = SSL_read(net->ssl, net->read, RECEIVE_BUFFER_SIZE);
         if (bytes_rec > 0) {
             ssize_t nparsed = http_parser_execute(net->parser, net->settings, net->read, bytes_rec);
-
+            //printf("Bytes rec: %d, Nparsed: %d, Status: %d\n", bytes_rec, nparsed, m->status);
             if (net->parser->http_errno != 0){
+                printf("Errno\n");
                 // TODO: Не работает
                 //logHParserError(HTTP_PARSER_ERRNO((http_parser *)net->parser));
                 ret = E_HTTP_PARSER_FAILED;
                 break;
+            }
+            if (m->status == 429){
+                ret = E_TOO_MANY_REQ;
             }
             if (m->message_complete_cb_called) {
                 ret = E_SUCCESS;
@@ -223,7 +226,15 @@ int send_to(const char *request, size_t size, struct network *net){
     if (ret != E_SUCCESS){
         return E_SEND;
     }
-    ret = socketRead(net);
+    while(1) {
+        ret = socketRead(net);
+        if (ret == E_TOO_MANY_REQ){
+            printf("sleep\n");
+            sleep(1);
+            continue;
+        }
+        break;
+    }
     if (ret != E_SUCCESS){
         return ret;
     }
