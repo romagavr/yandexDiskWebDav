@@ -102,7 +102,57 @@ static Leaf* createNewLeaf(void){
     return leaf;
 }
 
-static void parseXML(xmlNode *a_node, Node *node, Leaf *leaf) {
+Queue* initQueue(void){
+    Queue *queue = malloc(sizeof *queue);
+    memset(queue, 0, sizeof *queue);
+    queue->data = malloc(INIT_QUEUE_SIZE * sizeof(QNode));
+    memset(queue->data, 0, sizeof *queue->data);
+    queue->capasity = INIT_QUEUE_SIZE;
+    return queue;
+}
+
+int destroyQueue(Queue *queue) {
+    free(queue->data);
+    free(queue); 
+}
+
+//TODO: realloc ??? - обработка выделения
+int changeQueueSize(Queue *queue) {
+    char *new = realloc(queue->data, queue->capasity * 2);
+    if (new == 0){
+        return 1;
+    }
+    queue->data = new;
+    queue->capasity *= 2;
+    return 0;
+}
+
+int addToQueue(Queue *queue, QNode *node) {
+    if (queue->size == queue->capasity)
+        return 1;
+    if (queue->size == 0){
+        queue->rear = -1;
+        queue->front = 0;
+    };
+    queue->rear = (queue->rear + 1) % queue->capasity;
+    queue->size++;
+    memcpy((queue->data[queue->rear]).href, node->href, strlen(node->href));
+    memcpy((queue->data[queue->rear]).name, node->name, strlen(node->name));
+    return 0;
+}
+
+QNode* getFromQueue(Queue *queue) {
+    if (queue->size == 0)
+        return 0;
+    size_t t = queue->front;
+    //printf("Getting: %d\n", t);
+    queue->front = (queue->front + 1) % queue->capasity;
+    //printf("New front: %d\n", queue->front);
+    queue->size--;
+    return &queue->data[t];
+}
+/*
+static void parseXML(xmlNode *a_node, Node *node, Queue *queue) {
     int resp = 0;
     int countResp = -1;
     static char isFile = 0;
@@ -227,7 +277,7 @@ void treeTraverse(Node *node){
         treeTraverse(node->nodes[i]);
     }
 }
-
+*/
 ///
 /*
 void traverseXML(xmlNode *a_node, struct item *head) {

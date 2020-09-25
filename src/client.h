@@ -24,29 +24,37 @@
 #define S_ITEM_LEN 200
 #define MAX_NODES 300 
 #define MAX_LEAFS 300 
+#define INIT_QUEUE_SIZE 15
+
+typedef struct QNode {
+    char name[S_ITEM_LEN];
+    char href[S_ITEM_LEN];
+} QNode;
+
+typedef struct Queue {
+    size_t front, rear;
+    size_t size, capasity;
+    QNode *data;
+} Queue;
+
+
+typedef struct Node {
+    char href[S_ITEM_LEN];
+
+    struct Node* nodes[MAX_NODES];
+    size_t nodes_count;
+} Node;
 
 struct info {
-    char href[S_ITEM_LEN];
     char creationdate[S_ITEM_LEN];
     char displayname[S_ITEM_LEN];
     char getlastmodified[S_ITEM_LEN];
 };
 
-typedef struct Node {
-    struct info *info;
-    
-    struct Node* nodes[MAX_NODES];
-    struct Leaf* leafs[MAX_LEAFS];
-
-    size_t leafs_count;
-    size_t nodes_count;
-} Node;
-
 typedef struct Leaf {
     struct info *info;
     struct fileInfo *fileinfo;
 } Leaf;
-
 
 struct fileInfo {
     char file_url[S_ITEM_LEN];
@@ -77,3 +85,11 @@ static void createFolderNode(Node *node, struct network *net);
 Node* getRemoteFSTree(const char *rootPath, struct network *net);
 
 void treeTraverse(Node *node);
+
+
+
+Queue* initQueue(void);
+int destroyQueue(Queue *queue);
+int changeQueueSize(Queue *queue);
+int addToQueue(Queue *queue, QNode *node);
+QNode* getFromQueue(Queue *queue);
