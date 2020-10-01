@@ -21,7 +21,7 @@
 #define MAXLINE 5000
 #define HEADER_LEN 1000
 
-#define S_ITEM_LEN 200
+#define S_ITEM_LEN 256
 #define MAX_NODES 300 
 #define MAX_LEAFS 300 
 #define INIT_QUEUE_SIZE 15
@@ -82,7 +82,7 @@ static xmlNode* getFolderXml(const char *folder, struct network *net);
 static Leaf* createNewLeaf(void);
 static void parseXML(xmlNode *a_node, Node *node, Leaf *leaf);
 static void createFolderNode(Node *node, struct network *net);
-Node* getRemoteFSTree(const char *rootPath, struct network *net);
+int synchronize(const char *rootPath, struct network *net);
 
 void treeTraverse(Node *node);
 

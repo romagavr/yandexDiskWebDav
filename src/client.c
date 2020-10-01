@@ -151,7 +151,7 @@ QNode* getFromQueue(Queue *queue) {
     queue->size--;
     return &queue->data[t];
 }
-/*
+
 static void parseXML(xmlNode *a_node, Node *node, Queue *queue) {
     int resp = 0;
     int countResp = -1;
@@ -225,9 +225,13 @@ static void parseXML(xmlNode *a_node, Node *node, Queue *queue) {
 }
 
 static void createFolderNode(Node *node, struct network *net) {
+    if (node == 0) {
+        node = malloc(sizeof *node);
+        memset(node, 0, sizeof *node);
+    }
     //TODO: errorChecking
     //logMessage(node->info->href);
-    xmlNode* root = getFolderXml(node->info->href, net);
+    xmlNode* root = getFolderXml(node, net);
     parseXML(root, node, 0); 
     xmlFreeNode(root);
     for(size_t i = 0; i < node->nodes_count; i++) {
@@ -235,21 +239,67 @@ static void createFolderNode(Node *node, struct network *net) {
     }
 }
 
-Node* getRemoteFSTree(const char *rootPath, struct network *net){
-    Node *root = malloc(sizeof *root);
-    memset(root, 0, sizeof *root);
-    root->info = malloc(sizeof *root->info);
-    memset(root->info, 0, sizeof *root->info);
-    //TODO: memcpy or strcpy ?? and in traverseXML too
-    memcpy(root->info->href, rootPath, strlen(rootPath) + 1);
-
-    createFolderNode(root, net);
-
-    treeTraverse(root);
-
-    return root;
+int saveFiles(struct network *net, int fifo){
+    Queue *q = initQueue();
+    QNode *n = malloc(sizeof *n);
+    memset(n, '\0', sizeof *n);
+    len = read(fd_fifo, n, sizeof *n);
+    if (len == 0)
+        cp += len;
+    destroyQueue(q);
 }
 
+#define FIFO_PATH "./fifo"
+
+int synchronize(const char *rootPath, struct network *net){
+    int fd_fifo;
+    if (mkfifo(FIFO_PATH, 0777) != 0){
+        fprintf(stderr, "Error while creating FIFO; (%d): %s\n", errno, strerror(errno));
+        return 1;
+    };
+
+    switch (fork())
+    {
+    case -1:
+        /* errror */
+        break;
+    case 0:
+        struct network *netForDown = 0;
+        int res;
+        res = initNetworkStruct(&netForDown);
+        if (res != E_SUCCESS){
+            return 1;
+        }
+
+        res = connect_to(netForDown,  WHOST);
+        if (res != E_SUCCESS){
+            return 1;
+        }
+        if((fd_fifo=open(FIFO_PATH, O_RDONLY)) == - 1){
+            fprintf(stderr, "Error while creating FIFO; (%d): %s\n", errno, strerror(errno));
+            return 1;
+        }
+        saveFiles(netForDown, fd_fifo);
+        break; 
+    default:
+        if((fd_fifo=open(FIFO_PATH, O_WRONLY)) == - 1){
+            fprintf(stderr, "Error while creating FIFO; (%d): %s\n", errno, strerror(errno));
+            return 1;
+        }
+        createFolderNode(0, net);
+        int status;
+        wait(&status);
+        break;
+    }
+
+    //treeTraverse(root);
+    if (unlink(FIFO_PATH) != 0) {
+        fprintf(stderr, "Error while closing FIFO; (%d): %s\n", errno, strerror(errno));
+        return 1;
+    }
+    return 0;
+}
+/*
 void printLeaf(Leaf *leaf, int tab){
     printf("%*sFile path: %s\n", tab, " ", leaf->info->href);
     printf("%*s---Name: %s\n", tab, " ", leaf->info->displayname);
