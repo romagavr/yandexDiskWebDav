@@ -70,14 +70,14 @@ static xmlNode* getFolderXml(const char *folder, struct network *net) {
         return 0;
     }
     struct message *m = (struct message *)net->parser->data;
-    if (m->status == 429){
+    if (m->status == 400){
         for (int i=0; i< m->num_headers; i++){
             printf("%s: %s\n", m->headers[i][0], m->headers[i][1]);
         }
         printf("Body: %s\n", m->body);
     }
     //printf("Body: %s\n", m->body);
-    printf("Body size: %d\n", m->body_size);
+    //printf("Body size: %d\n", m->body_size);
     if (m->status == 404 || m->status == 400)
         return 0;
     if (m->content_length = 0)
@@ -152,79 +152,89 @@ QNode* getFromQueue(Queue *queue) {
     return &queue->data[t];
 }
 
-static void parseXML(xmlNode *a_node, Node *node, Queue *queue) {
-    int resp = 0;
-    int countResp = -1;
-    static char isFile = 0;
-    if (node == 0){
-        //TODO: exit
+static void parseXML(xmlNode *a_node, Node *node, QNode *qnode, int fifo) {
+    if (qnode == 0){
+        qnode = malloc(sizeof *qnode);
     }
+
+    int resp = (strcmp(a_node->name, "response") == 0) ? 1 : 0;
 
     for (xmlNode *xmlnd = a_node; xmlnd; xmlnd = xmlnd->next) {
-        if (xmlnd->type == XML_ELEMENT_NODE){
-            if (strcmp(xmlnd->name, "response") == 0) { 
-                countResp++;
-                if (countResp == 0) continue;
-                resp = 1;
-            } else if (strcmp(xmlnd->name, "href") == 0) { 
-                strcpy(leaf->info->href, xmlNodeGetContent(xmlnd));
-            } else if (strcmp(xmlnd->name, "displayname") == 0) { 
-                strcpy(leaf->info->displayname, xmlNodeGetContent(xmlnd));
-            }
-        }
-        parseXML(xmlnd->children, node, leaf);
-        if (resp == 1) {
-            if (isFile){
-                node->leafs[node->leafs_count] = leaf;
-                node->leafs_count++;
+        if (resp && xmlnd->children){
+            memset(qnode, '\0', sizeof *qnode);
+            parseXML(xmlnd->children, node, qnode, fifo);
 
-                leaf = createNewLeaf();
-                isFile = 0;
-            } else {
+            write(fifo, qnode, sizeof *qnode);
+
+            if (xmlnd != a_node && !qnode->isFile) {
+                printf(" ------ %s\n", qnode->href);
+
                 Node *n = malloc(sizeof *n);
                 memset(n, 0, sizeof *n);
-                n->info = leaf->info;
+                strcpy(n->href, qnode->href);
+
                 node->nodes[node->nodes_count] = n;
                 node->nodes_count++;
-
-                leaf->info = malloc(sizeof *leaf->info);
             }
+        } else {
+            if (strcmp(xmlnd->name, "href") == 0) { 
+                strcpy(qnode->href, xmlNodeGetContent(xmlnd));
+            } else if (strcmp(xmlnd->name, "displayname") == 0) { 
+                strcpy(qnode->name, xmlNodeGetContent(xmlnd));
+            } else if (strcmp(xmlnd->name, "resourcetype") == 0 && !xmlnd->children) { 
+                qnode->isFile = 1;
+            }
+
+            if (xmlnd->children)
+                parseXML(xmlnd->children, node, qnode, fifo);
         }
     }
-    //TODO: this is huina
-    if (resp == 1){
-        free(leaf->fileinfo);
-        free(leaf->info);
-        free(leaf);
-    }
+
+    if (resp) free(qnode);
 }
 
 static void createFolderNode(Node *node, struct network *net, int fifo) {
     if (node == 0) {
         node = malloc(sizeof *node);
         memset(node, 0, sizeof *node);
+        strcpy(node->href, "/");
     }
     //TODO: errorChecking
     //logMessage(node->info->href);
-    xmlNode* root = getFolderXml(node, net);
-    parseXML(root, node, 0); 
+    xmlNode *root = getFolderXml(node, net);
+    printf(" ------ %d", root);
+    parseXML(root, node, 0, fifo); 
     xmlFreeNode(root);
     for(size_t i = 0; i < node->nodes_count; i++) {
+        printf("Looking for: %s\n", node->nodes[i]->href);
         createFolderNode(node->nodes[i], net, fifo);
     }
+
+    printf(" 11111111111------ %s\n", node->href);
 }
 
 int saveFiles(struct network *net, int fifo){
     Queue *q = initQueue();
     QNode *n = malloc(sizeof *n);
     memset(n, '\0', sizeof *n);
-    len = read(fd_fifo, n, sizeof *n);
-    if (len == 0)
-        cp += len;
+    int len = 0;
+    int counter = 0;
+    while ((len = read(fifo, n, sizeof *n)) > 0) {
+        //if (counter > 30)
+        //    break;
+        counter++;
+        printf("Len: %d\n", len);
+        printf("QNode:\n");
+        printf("Name: %s\n", n->name);
+        printf("Href: %s\n", n->href);
+        if (counter == 1) sleep(3);
+    }
+
+
     destroyQueue(q);
+    return 0;
 }
 
-#define FIFO_PATH "./fifo"
 
 int synchronize(const char *rootPath, struct network *net){
     int fd_fifo;
@@ -239,8 +249,9 @@ int synchronize(const char *rootPath, struct network *net){
         /* errror */
         break;
     case 0:
+        printf("Child\n");
         struct network *netForDown = 0;
-        int res;
+        /*int res;
         res = initNetworkStruct(&netForDown);
         if (res != E_SUCCESS){
             return 1;
@@ -249,21 +260,29 @@ int synchronize(const char *rootPath, struct network *net){
         res = connect_to(netForDown,  WHOST);
         if (res != E_SUCCESS){
             return 1;
-        }
+        }*/
         if((fd_fifo=open(FIFO_PATH, O_RDONLY)) == - 1){
             fprintf(stderr, "Error while creating FIFO; (%d): %s\n", errno, strerror(errno));
             return 1;
         }
         saveFiles(netForDown, fd_fifo);
+        exit(0);
         break; 
     default:
         if((fd_fifo=open(FIFO_PATH, O_WRONLY)) == - 1){
             fprintf(stderr, "Error while creating FIFO; (%d): %s\n", errno, strerror(errno));
             return 1;
         }
-        createFolderNode(0, net);
+        Node *root = malloc(sizeof *root);
+        memset(root, '\0', sizeof *root);
+        strcpy(root->href, rootPath);
+
+        createFolderNode(root, net, fd_fifo);
+        printf("End: \n");
         int status;
-        wait(&status);
+        int pid;
+            pid = wait(&status);
+            printf("Pid: %d\n", pid);
         break;
     }
 

@@ -13,7 +13,7 @@ int main(int argc, char *argv[]){
         return 1;
     }
 
-    getRemoteFSTree("/", net);
+    synchronize("/test", net);
     // без слэша в начале  - 400
     // если нет такой директории - 404
     // в остальных случаях - 207

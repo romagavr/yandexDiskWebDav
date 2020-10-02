@@ -2,6 +2,10 @@
 #include<stdio.h>
 #include<stdlib.h>
 #include<string.h>
+#include<fcntl.h>
+#include<unistd.h>
+#include<sys/wait.h>
+#include<sys/stat.h>
 
 // TODO: Add ifndef ?
 #include<openssl/ssl.h>
@@ -26,9 +30,12 @@
 #define MAX_LEAFS 300 
 #define INIT_QUEUE_SIZE 15
 
+#define FIFO_PATH "./fifo"
+
 typedef struct QNode {
     char name[S_ITEM_LEN];
     char href[S_ITEM_LEN];
+    int isFile;
 } QNode;
 
 typedef struct Queue {
@@ -80,7 +87,7 @@ int uploadFile(const char *localPath, const char *remotePath, struct network *ne
 
 static xmlNode* getFolderXml(const char *folder, struct network *net);
 static Leaf* createNewLeaf(void);
-static void parseXML(xmlNode *a_node, Node *node, Leaf *leaf);
+static void parseXML(xmlNode *a_node, Node *node, QNode *qnode, int fifo);
 static void createFolderNode(Node *node, struct network *net, int fifo);
 int synchronize(const char *rootPath, struct network *net);
 
