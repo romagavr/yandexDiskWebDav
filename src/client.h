@@ -81,7 +81,7 @@ int uploadFile(const char *localPath, const char *remotePath, struct network *ne
 static xmlNode* getFolderXml(const char *folder, struct network *net);
 static Leaf* createNewLeaf(void);
 static void parseXML(xmlNode *a_node, Node *node, Leaf *leaf);
-static void createFolderNode(Node *node, struct network *net);
+static void createFolderNode(Node *node, struct network *net, int fifo);
 int synchronize(const char *rootPath, struct network *net);
 
 void treeTraverse(Node *node);

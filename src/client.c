@@ -159,9 +159,6 @@ static void parseXML(xmlNode *a_node, Node *node, Queue *queue) {
     if (node == 0){
         //TODO: exit
     }
-    if (leaf == 0){
-        leaf = createNewLeaf();
-    }
 
     for (xmlNode *xmlnd = a_node; xmlnd; xmlnd = xmlnd->next) {
         if (xmlnd->type == XML_ELEMENT_NODE){
@@ -171,30 +168,8 @@ static void parseXML(xmlNode *a_node, Node *node, Queue *queue) {
                 resp = 1;
             } else if (strcmp(xmlnd->name, "href") == 0) { 
                 strcpy(leaf->info->href, xmlNodeGetContent(xmlnd));
-            } else if (strcmp(xmlnd->name, "creationdate") == 0) { 
-                strcpy(leaf->info->creationdate, xmlNodeGetContent(xmlnd));
             } else if (strcmp(xmlnd->name, "displayname") == 0) { 
                 strcpy(leaf->info->displayname, xmlNodeGetContent(xmlnd));
-            } else if (strcmp(xmlnd->name, "getlastmodified") == 0) { 
-                strcpy(leaf->info->getlastmodified, xmlNodeGetContent(xmlnd));
-            } else if (strcmp(xmlnd->name, "file_url") == 0) { 
-                if (!isFile) isFile = 1;
-                strcpy(leaf->fileinfo->file_url, xmlNodeGetContent(xmlnd));
-            } else if (strcmp(xmlnd->name, "getetag") == 0) { 
-                if (!isFile) isFile = 1;
-                strcpy(leaf->fileinfo->getetag, xmlNodeGetContent(xmlnd));
-            } else if (strcmp(xmlnd->name, "mulca_file_url") == 0) { 
-                if (!isFile) isFile = 1;
-                strcpy(leaf->fileinfo->mulca_file_url, xmlNodeGetContent(xmlnd));
-            } else if (strcmp(xmlnd->name, "mulca_digest_url") == 0) { 
-                if (!isFile) isFile = 1;
-                strcpy(leaf->fileinfo->mulca_digest_url, xmlNodeGetContent(xmlnd));
-            } else if (strcmp(xmlnd->name, "getcontenttype") == 0) { 
-                if (!isFile) isFile = 1;
-                strcpy(leaf->fileinfo->getcontenttype, xmlNodeGetContent(xmlnd));
-            } else if (strcmp(xmlnd->name, "getcontentlength") == 0) { 
-                if (!isFile) isFile = 1;
-                strcpy(leaf->fileinfo->getcontentlength, xmlNodeGetContent(xmlnd));
             }
         }
         parseXML(xmlnd->children, node, leaf);
@@ -224,7 +199,7 @@ static void parseXML(xmlNode *a_node, Node *node, Queue *queue) {
     }
 }
 
-static void createFolderNode(Node *node, struct network *net) {
+static void createFolderNode(Node *node, struct network *net, int fifo) {
     if (node == 0) {
         node = malloc(sizeof *node);
         memset(node, 0, sizeof *node);
@@ -235,7 +210,7 @@ static void createFolderNode(Node *node, struct network *net) {
     parseXML(root, node, 0); 
     xmlFreeNode(root);
     for(size_t i = 0; i < node->nodes_count; i++) {
-        createFolderNode(node->nodes[i], net);
+        createFolderNode(node->nodes[i], net, fifo);
     }
 }
 
