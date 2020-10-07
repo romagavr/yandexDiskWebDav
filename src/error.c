@@ -27,3 +27,9 @@ void logHParserError(const char *message){
 void logMessage(const char *msg){
         fprintf(stderr, "Message: %s\n", msg);
 }
+
+// client.c
+
+void logErrno(const char *mes){
+    fprintf(stderr, "** (%s) - Errno: (%d: %s)\n", mes, errno, strerror(errno));
+};

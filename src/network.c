@@ -68,7 +68,7 @@ int on_body(http_parser *parser, const char* data, size_t length) {
       m->body = new;
       m->body_size = t_len * 2;
   }
-  strncat(m->body + m->parsed_length, data, length);
+  memcpy(m->body + m->parsed_length, data, length);
   m->parsed_length = t_len;
   return 0;
 }

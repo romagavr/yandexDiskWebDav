@@ -31,6 +31,8 @@
 #define INIT_QUEUE_SIZE 15
 
 #define FIFO_PATH "./fifo"
+#define DOWNLOAD_PATH "/home/roman/Documents/clang/yandexDiskWebDav/build"
+#define MAX_PATH_LEN 300
 
 typedef struct QNode {
     char name[S_ITEM_LEN];
@@ -52,26 +54,6 @@ typedef struct Node {
     size_t nodes_count;
 } Node;
 
-struct info {
-    char creationdate[S_ITEM_LEN];
-    char displayname[S_ITEM_LEN];
-    char getlastmodified[S_ITEM_LEN];
-};
-
-typedef struct Leaf {
-    struct info *info;
-    struct fileInfo *fileinfo;
-} Leaf;
-
-struct fileInfo {
-    char file_url[S_ITEM_LEN];
-    char getetag[S_ITEM_LEN];
-    char mulca_file_url[S_ITEM_LEN];
-    char getcontenttype[S_ITEM_LEN];
-    char getcontentlength[S_ITEM_LEN];
-    char mulca_digest_url[S_ITEM_LEN];
-};
-
 struct file_system{
     struct item *head;
     int free_space;
@@ -79,24 +61,22 @@ struct file_system{
 };
 
 int getToken(void);
-void print_element_names(xmlNode *a_node);
 //void traverseXML(xmlNode *a_node, struct item *head);
-ssize_t getFolderStruct(const char *folder, struct network *net);
 int fileUpload(const char *file, long int file_size, const char *remPath, struct network *net); 
 int uploadFile(const char *localPath, const char *remotePath, struct network *net);
 
-static xmlNode* getFolderXml(const char *folder, struct network *net);
-static Leaf* createNewLeaf(void);
-static void parseXML(xmlNode *a_node, Node *node, QNode *qnode, int fifo);
-static void createFolderNode(Node *node, struct network *net, int fifo);
-int synchronize(const char *rootPath, struct network *net);
 
 void treeTraverse(Node *node);
-
-
 
 Queue* initQueue(void);
 int destroyQueue(Queue *queue);
 int changeQueueSize(Queue *queue);
 int addToQueue(Queue *queue, QNode *node);
 QNode* getFromQueue(Queue *queue);
+
+
+static int webdavGet(struct network *net, const char *filepath, char **file);
+static void parseXML(xmlNode *a_node, Node *node, QNode *qnode, int fifo);
+static void createFolderNode(Node *node, struct network *net, int fifo);
+static xmlNode* getFolderXml(const char *folder, struct network *net);
+int synchronize(const char *rootPath, struct network *net);

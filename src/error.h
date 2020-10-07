@@ -41,3 +41,5 @@ void logLibError(error_t err, int printErrno);
 void logSSLError(const char *message);
 void logHParserError(const char *message);
 void logMessage(const char *msg);
+
+void logErrno(const char *mes);

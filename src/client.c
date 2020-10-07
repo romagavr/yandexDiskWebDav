@@ -1,14 +1,6 @@
 #include"client.h"
 
 
-//TODO: traverse remote filesystem
-//TODO: if lastModify > last_traversed_remote
-//          add file/collection to download queue
-//TODO: set inoify on folder and inner entities
-int item_construct(struct file_system *fs){
-
-}
-
 /*
 int getToken(){
     SSL *ssl = 0;
@@ -92,15 +84,6 @@ static xmlNode* getFolderXml(const char *folder, struct network *net) {
     return root_element;
 }
 
-static Leaf* createNewLeaf(void){
-    Leaf *leaf = malloc(sizeof *leaf);
-    memset(leaf, 0, sizeof *leaf);
-    leaf->info = malloc(sizeof *leaf->info);
-    memset(leaf->info, 0, sizeof *leaf->info);
-    leaf->fileinfo = malloc(sizeof *leaf->fileinfo);
-    memset(leaf->fileinfo, 0, sizeof *leaf->fileinfo);
-    return leaf;
-}
 
 Queue* initQueue(void){
     Queue *queue = malloc(sizeof *queue);
@@ -118,7 +101,7 @@ int destroyQueue(Queue *queue) {
 
 //TODO: realloc ??? - обработка выделения
 int changeQueueSize(Queue *queue) {
-    char *new = realloc(queue->data, queue->capasity * 2);
+    QNode *new = realloc(queue->data, queue->capasity * 2);
     if (new == 0){
         return 1;
     }
@@ -136,8 +119,10 @@ int addToQueue(Queue *queue, QNode *node) {
     };
     queue->rear = (queue->rear + 1) % queue->capasity;
     queue->size++;
+    memset(&(queue->data[queue->rear]), 0, sizeof queue->data[queue->rear]);
     memcpy((queue->data[queue->rear]).href, node->href, strlen(node->href));
     memcpy((queue->data[queue->rear]).name, node->name, strlen(node->name));
+    (queue->data[queue->rear]).isFile = node->isFile;
     return 0;
 }
 
@@ -167,8 +152,6 @@ static void parseXML(xmlNode *a_node, Node *node, QNode *qnode, int fifo) {
             write(fifo, qnode, sizeof *qnode);
 
             if (xmlnd != a_node && !qnode->isFile) {
-                printf(" ------ %s\n", qnode->href);
-
                 Node *n = malloc(sizeof *n);
                 memset(n, 0, sizeof *n);
                 strcpy(n->href, qnode->href);
@@ -202,34 +185,79 @@ static void createFolderNode(Node *node, struct network *net, int fifo) {
     //TODO: errorChecking
     //logMessage(node->info->href);
     xmlNode *root = getFolderXml(node, net);
-    printf(" ------ %d", root);
     parseXML(root, node, 0, fifo); 
     xmlFreeNode(root);
     for(size_t i = 0; i < node->nodes_count; i++) {
-        printf("Looking for: %s\n", node->nodes[i]->href);
         createFolderNode(node->nodes[i], net, fifo);
+        // TODO: delete node[i]
     }
+}
 
-    printf(" 11111111111------ %s\n", node->href);
+
+static int webdavGet(struct network *net, const char *filepath, char **file) {
+    char *sendline = malloc(MAXLINE+1);
+    snprintf(sendline, MAXLINE,
+		"GET %s HTTP/1.1\r\n"
+		"Host: %s\r\n"
+        "Accept: */*\r\n"
+        "Authorization: OAuth %s\r\n\r\n", filepath, WHOST, TOKEN);
+
+    int res = send_to(sendline, strlen(sendline), net);
+    if (res != E_SUCCESS) {
+        return 0;
+    }
+    struct message *m = (struct message *)net->parser->data;
+    //printf("Download Body: %s\n", m->body);
+    if (m->status == 404 || m->status == 400)
+        return 0;
+
+    *file = m->body;
+
+    return m->parsed_length;
 }
 
 int saveFiles(struct network *net, int fifo){
     Queue *q = initQueue();
-    QNode *n = malloc(sizeof *n);
-    memset(n, '\0', sizeof *n);
+    QNode *n = 0;
+    QNode tmpn = {0};
+    char *file = 0;
+    char path[MAX_PATH_LEN] = DOWNLOAD_PATH; 
+    int fsize;
+    int crFd;
     int len = 0;
-    int counter = 0;
-    while ((len = read(fifo, n, sizeof *n)) > 0) {
-        //if (counter > 30)
-        //    break;
-        counter++;
-        printf("Len: %d\n", len);
-        printf("QNode:\n");
-        printf("Name: %s\n", n->name);
-        printf("Href: %s\n", n->href);
-        if (counter == 1) sleep(3);
-    }
 
+    for (;;) {
+        while (read(fifo, &tmpn, sizeof tmpn) > 0) {
+            addToQueue(q, &tmpn);
+        } 
+        if (q->size == 0)
+            break;
+
+        n = getFromQueue(q);
+        memset(path + strlen(DOWNLOAD_PATH), '\0', MAX_PATH_LEN - strlen(DOWNLOAD_PATH));
+        strcat(path, n->href);
+        if (n->isFile){
+            if ((fsize = webdavGet(net, n->href, &file)) == 0) {
+                logErrno("File download error");
+                continue; 
+            }
+            if ((crFd = open(path, O_CREAT | O_WRONLY, 0777)) == -1){
+                logErrno("Open file to write");
+                continue;
+            }
+            len = 0;
+            while (len != fsize) {
+                if ((len = write(crFd, file, fsize)) == -1) {
+                    logErrno("Writing to file error");
+                }
+            }
+            printf("Created file: %s (%d bytes)\n", path, fsize);
+            close(crFd);
+        } else {
+            if (mkdir(path, 0777) == -1)
+                logErrno("Creating folder error");
+        }
+     }
 
     destroyQueue(q);
     return 0;
@@ -251,7 +279,7 @@ int synchronize(const char *rootPath, struct network *net){
     case 0:
         printf("Child\n");
         struct network *netForDown = 0;
-        /*int res;
+        int res;
         res = initNetworkStruct(&netForDown);
         if (res != E_SUCCESS){
             return 1;
@@ -260,12 +288,15 @@ int synchronize(const char *rootPath, struct network *net){
         res = connect_to(netForDown,  WHOST);
         if (res != E_SUCCESS){
             return 1;
-        }*/
+        }
         if((fd_fifo=open(FIFO_PATH, O_RDONLY)) == - 1){
             fprintf(stderr, "Error while creating FIFO; (%d): %s\n", errno, strerror(errno));
             return 1;
         }
+
         saveFiles(netForDown, fd_fifo);
+
+        close(fd_fifo);
         exit(0);
         break; 
     default:
@@ -278,11 +309,11 @@ int synchronize(const char *rootPath, struct network *net){
         strcpy(root->href, rootPath);
 
         createFolderNode(root, net, fd_fifo);
-        printf("End: \n");
+
+        close(fd_fifo);
         int status;
-        int pid;
-            pid = wait(&status);
-            printf("Pid: %d\n", pid);
+        int pid = wait(&status);
+        printf("Pid: %d\n", pid);
         break;
     }
 
@@ -294,19 +325,6 @@ int synchronize(const char *rootPath, struct network *net){
     return 0;
 }
 /*
-void printLeaf(Leaf *leaf, int tab){
-    printf("%*sFile path: %s\n", tab, " ", leaf->info->href);
-    printf("%*s---Name: %s\n", tab, " ", leaf->info->displayname);
-    printf("%*s---Creation date: %s\n", tab, " ", leaf->info->creationdate);
-    printf("%*s---Last Modified: %s\n", tab, " ", leaf->info->getlastmodified);
-    printf("%*s---File Url: %s\n", tab, " ", leaf->fileinfo->file_url);
-    printf("%*s---Etag: %s\n", tab, " ", leaf->fileinfo->getetag);
-    printf("%*s---Mulca file url: %s\n", tab, " ", leaf->fileinfo->mulca_file_url);
-    printf("%*s---Content Type: %s\n", tab, " ", leaf->fileinfo->getcontenttype);
-    printf("%*s---Content Length: %s\n", tab, " ", leaf->fileinfo->getcontentlength);
-    printf("%*s---Mulca digest url: %s\n", tab, " ", leaf->fileinfo->mulca_digest_url);
-}
-
 void treeTraverse(Node *node){
     static int tab = 1;
     printf("%*sFolder path: %s\n", tab, " ", node->info->href);
@@ -379,16 +397,6 @@ void traverseXML(xmlNode *a_node, struct item *head) {
         traverseXML(node->children, head);
     }
 }
-
-void printItems(struct item *head){
-    while(head->next != 0){
-        if (head->info == 0)
-            printf("Folder: %s\n", head->href);
-        else
-            printf("File: %s\n", head->displayname);
-        head = head->next;
-    }
-}
 */
 int getSpaceInfo(struct network *net) {
     char *body = "<?xml version=\"1.0\" ?>"
@@ -420,42 +428,6 @@ int getSpaceInfo(struct network *net) {
         return 0;
 }
 
-/*ssize_t getFolderStruct(const char *folder, struct network *net) {
-    //getSpaceInfo(net);
-    //exit(1);
-    char *sendline = malloc(MAXLINE+1);
-    snprintf(sendline, MAXLINE,
-		"PROPFIND %s HTTP/1.1\r\n"
-		"Host: %s\r\n"
-        "Accept: *\/*\r\n" //slash UBRAT
-        "Depth: 1\r\n"
-        "Authorization: OAuth %s\r\n\r\n", folder, WHOST, TOKEN);
-
-    int res = send_to(sendline, strlen(sendline), net);
-    if (res != E_SUCCESS) {
-        return 0;
-    }
-    struct message *m = (struct message *)net->parser->data;
-    printf("Body: %s\n", m->body);
-    if (m->status == 404 || m->status == 400)
-        return 0;
-    if (m->content_length > 0){
-        LIBXML_TEST_VERSION
-        xmlNode *root_element = 0;
-        xmlDoc *doc = 0;
-        doc = xmlParseDoc(m->body);
-        root_element = xmlDocGetRootElement(doc);
-        //TODO: Надо бы тут сделать парсинг удаленных дирeкторий B-tree??
-
-        struct item *head = malloc(sizeof *head); 
-        memset(head, 0, sizeof *head);
-        traverseXML(root_element, head);
-        printItems(head);
-        //print_element_names(root_element);
-    }
-
-    return 1;
-}*/
 /*
 int fileUpload(const char *file, long int file_size, const char *remPath, struct network *net) {
     SSL *ssl = net->ssl;
