@@ -1,7 +1,113 @@
 #include"client.h"
 
+static int webdavGet(struct network *net, const char *filepath, char **file);
+static int webdavPropfind(struct network *net, const char *filepath, char **file);
 
+static int estConnection(struct network **net);
+
+static void parseXML(xmlNode *a_node, Node *node, QNode *qnode, int fifo);
+static void createFolderNode(Node *node, struct network *net, int fifo);
+
+
+static int webdavGet(struct network *net, const char *filepath, char **file) {
+    const char *req = "GET %s HTTP/1.1\r\n"
+		              "Host: %s\r\n"
+                      "Accept: */*\r\n"
+                      "Authorization: OAuth %s\r\n\r\n";
+    ssize_t headerLen = snprintf(NULL, 0, req, filepath, WHOST, TOKEN) + 1; 
+    char *header = 0;
+    int isMall = 0;
+    if (HEADER_LEN < headerLen) {
+        header = malloc(headerLen);
+        MALLOC_ERROR_CHECK(header);
+        isMall = 1;
+    } else {
+        header = alloca(headerLen);
+    }
+
+    int len = snprintf(header, headerLen, req, filepath, WHOST, TOKEN);
+    if (len < 0 || len >= headerLen)
+        return E_SPRINTF;
+
+    int res = send_to(header, len, net);
+    if (isMall)
+        free(header);
+    
+    if (res != E_SUCCESS)
+        return res;
+
+    struct message *m = (struct message *)net->parser->data;
+    *file = m->body;
+
+    return m->parsed_length;
+}
+
+static int webdavPropfind(struct network *net, const char *filepath, char **file) {
+    const char *req = "PROPFIND %s HTTP/1.1\r\n"
+                      "Host: %s\r\n"
+                      "Accept: */*\r\n"
+                      "Depth: 1\r\n"
+                      "Authorization: OAuth %s\r\n\r\n";
+    ssize_t headerLen = snprintf(NULL, 0, req, filepath, WHOST, TOKEN) + 1; 
+    char *header = 0;
+    int isMall = 0;
+    if (HEADER_LEN < headerLen) {
+        header = malloc(headerLen);
+        MALLOC_ERROR_CHECK(header);
+        isMall = 1;
+    } else {
+        header = alloca(headerLen);
+    }
+
+    int len = snprintf(header, headerLen, req, filepath, WHOST, TOKEN);
+    if (len < 0 || len >= headerLen)
+        return E_SPRINTF;
+
+    int res = send_to(header, len, net);
+    if (isMall)
+        free(header);
+    
+    if (res != E_SUCCESS)
+        return res;
+
+    struct message *m = (struct message *)net->parser->data;
+    *file = m->body;
+
+    return m->parsed_length;
+}
+
+int getSpaceInfo(struct network *net) {
+    char *body = "<?xml version=\"1.0\" ?>"
+                 "<D:propfind xmlns:D=\"DAV:\">"
+                 "<D:allprop />"
+                    "<D:prop>"
+                        "<D:quota-available-bytes/>"
+                        "<D:quota-used-bytes/>"
+                    "</D:prop>"
+                 "</D:propfind>";
+    
+    char *sendline = malloc(MAXLINE+1);
+    snprintf(sendline, MAXLINE,
+		"PROPFIND / HTTP/1.1\r\n"
+		"Host: %s\r\n"
+        "Accept: */*\r\n"
+        "Depth: 0\r\n"
+        "Content-Type: text/xml\r\n"
+        "Content-Length: %ld\r\n"
+        "Authorization: OAuth %s\r\n\r\n%s",  WHOST, strlen(body), TOKEN, body);
+
+    int res = send_to(sendline, strlen(sendline), net);
+    if (res != E_SUCCESS) {
+        return 0;
+    }
+    struct message *m = (struct message *)net->parser->data;
+    printf("Body: %s\n", m->body);
+    if (m->status == 404 || m->status == 400)
+        return 0;
+    return 0;
+}
 /*
+
 int getToken(){
     SSL *ssl = 0;
     SSL_CTX *ctx = 0; 
@@ -47,43 +153,6 @@ int getToken(){
 
     return 0;
 }*/
-static xmlNode* getFolderXml(const char *folder, struct network *net) {
-
-    char *sendline = malloc(MAXLINE+1);
-    snprintf(sendline, MAXLINE,
-		"PROPFIND %s HTTP/1.1\r\n"
-		"Host: %s\r\n"
-        "Accept: */*\r\n"
-        "Depth: 1\r\n"
-        "Authorization: OAuth %s\r\n\r\n", folder, WHOST, TOKEN);
-
-    int res = send_to(sendline, strlen(sendline), net);
-    if (res != E_SUCCESS) {
-        return 0;
-    }
-    struct message *m = (struct message *)net->parser->data;
-    if (m->status == 400){
-        for (int i=0; i< m->num_headers; i++){
-            printf("%s: %s\n", m->headers[i][0], m->headers[i][1]);
-        }
-        printf("Body: %s\n", m->body);
-    }
-    //printf("Body: %s\n", m->body);
-    //printf("Body size: %d\n", m->body_size);
-    if (m->status == 404 || m->status == 400)
-        return 0;
-    if (m->content_length = 0)
-        return 0;
-
-    LIBXML_TEST_VERSION
-    xmlNode *root_element = 0;
-    xmlDoc *doc = 0;
-    doc = xmlParseDoc(m->body);
-    root_element = xmlDocGetRootElement(doc);
-
-    return root_element;
-}
-
 
 Queue* initQueue(void){
     Queue *queue = malloc(sizeof *queue);
@@ -94,7 +163,7 @@ Queue* initQueue(void){
     return queue;
 }
 
-int destroyQueue(Queue *queue) {
+void destroyQueue(Queue *queue) {
     free(queue->data);
     free(queue); 
 }
@@ -121,7 +190,6 @@ int addToQueue(Queue *queue, QNode *node) {
     queue->size++;
     memset(&(queue->data[queue->rear]), 0, sizeof queue->data[queue->rear]);
     memcpy((queue->data[queue->rear]).href, node->href, strlen(node->href));
-    memcpy((queue->data[queue->rear]).name, node->name, strlen(node->name));
     (queue->data[queue->rear]).isFile = node->isFile;
     return 0;
 }
@@ -142,7 +210,7 @@ static void parseXML(xmlNode *a_node, Node *node, QNode *qnode, int fifo) {
         qnode = malloc(sizeof *qnode);
     }
 
-    int resp = (strcmp(a_node->name, "response") == 0) ? 1 : 0;
+    int resp = (strcmp((const char *)a_node->name, "response") == 0) ? 1 : 0;
 
     for (xmlNode *xmlnd = a_node; xmlnd; xmlnd = xmlnd->next) {
         if (resp && xmlnd->children){
@@ -160,11 +228,9 @@ static void parseXML(xmlNode *a_node, Node *node, QNode *qnode, int fifo) {
                 node->nodes_count++;
             }
         } else {
-            if (strcmp(xmlnd->name, "href") == 0) { 
-                strcpy(qnode->href, xmlNodeGetContent(xmlnd));
-            } else if (strcmp(xmlnd->name, "displayname") == 0) { 
-                strcpy(qnode->name, xmlNodeGetContent(xmlnd));
-            } else if (strcmp(xmlnd->name, "resourcetype") == 0 && !xmlnd->children) { 
+            if (strcmp((const char *)xmlnd->name, "href") == 0) { 
+                strcpy((char *)qnode->href, (const char *)xmlNodeGetContent(xmlnd));
+            } else if (strcmp((const char *)xmlnd->name, "resourcetype") == 0 && !xmlnd->children) { 
                 qnode->isFile = 1;
             }
 
@@ -182,38 +248,26 @@ static void createFolderNode(Node *node, struct network *net, int fifo) {
         memset(node, 0, sizeof *node);
         strcpy(node->href, "/");
     }
-    //TODO: errorChecking
-    //logMessage(node->info->href);
-    xmlNode *root = getFolderXml(node, net);
+
+    char *body = 0;
+    int res = webdavPropfind(net, node->href, &body);
+    if (res < 0) {
+        logLibError(res, 0);
+        return;
+    }
+
+    // TODO: Free *doc
+    //
+    LIBXML_TEST_VERSION
+    xmlDoc *doc = xmlParseDoc((const unsigned char*)body);
+    xmlNode *root = xmlDocGetRootElement(doc);
     parseXML(root, node, 0, fifo); 
     xmlFreeNode(root);
+
     for(size_t i = 0; i < node->nodes_count; i++) {
         createFolderNode(node->nodes[i], net, fifo);
         // TODO: delete node[i]
     }
-}
-
-
-static int webdavGet(struct network *net, const char *filepath, char **file) {
-    char *sendline = malloc(MAXLINE+1);
-    snprintf(sendline, MAXLINE,
-		"GET %s HTTP/1.1\r\n"
-		"Host: %s\r\n"
-        "Accept: */*\r\n"
-        "Authorization: OAuth %s\r\n\r\n", filepath, WHOST, TOKEN);
-
-    int res = send_to(sendline, strlen(sendline), net);
-    if (res != E_SUCCESS) {
-        return 0;
-    }
-    struct message *m = (struct message *)net->parser->data;
-    //printf("Download Body: %s\n", m->body);
-    if (m->status == 404 || m->status == 400)
-        return 0;
-
-    *file = m->body;
-
-    return m->parsed_length;
 }
 
 int saveFiles(struct network *net, int fifo){
@@ -237,8 +291,8 @@ int saveFiles(struct network *net, int fifo){
         memset(path + strlen(DOWNLOAD_PATH), '\0', MAX_PATH_LEN - strlen(DOWNLOAD_PATH));
         strcat(path, n->href);
         if (n->isFile){
-            if ((fsize = webdavGet(net, n->href, &file)) == 0) {
-                logErrno("File download error");
+            if ((fsize = webdavGet(net, n->href, &file)) < 0) {
+                logLibError(fsize, 0);
                 continue; 
             }
             if ((crFd = open(path, O_CREAT | O_WRONLY, 0777)) == -1){
@@ -264,8 +318,19 @@ int saveFiles(struct network *net, int fifo){
 }
 
 
-int synchronize(const char *rootPath, struct network *net){
+static int estConnection(struct network **net) {
+        int res;
+        if ((res = initNetworkStruct(net)) != E_SUCCESS)
+            return res;
+
+        return connect_to(*net,  WHOST);
+};
+
+int synchronize(const char *rootPath){
     int fd_fifo;
+    int res;
+    struct network *net = 0;
+
     if (mkfifo(FIFO_PATH, 0777) != 0){
         fprintf(stderr, "Error while creating FIFO; (%d): %s\n", errno, strerror(errno));
         return 1;
@@ -277,32 +342,30 @@ int synchronize(const char *rootPath, struct network *net){
         /* errror */
         break;
     case 0:
-        printf("Child\n");
-        struct network *netForDown = 0;
-        int res;
-        res = initNetworkStruct(&netForDown);
-        if (res != E_SUCCESS){
-            return 1;
-        }
-
-        res = connect_to(netForDown,  WHOST);
-        if (res != E_SUCCESS){
-            return 1;
-        }
+        if ((res = estConnection(&net) != E_SUCCESS)) {
+            logLibError(res, 0);
+            return res;
+        } 
         if((fd_fifo=open(FIFO_PATH, O_RDONLY)) == - 1){
-            fprintf(stderr, "Error while creating FIFO; (%d): %s\n", errno, strerror(errno));
-            return 1;
+            logLibError(E_FIFO_OPEN, 1);
+            return E_FIFO_OPEN;
         }
 
-        saveFiles(netForDown, fd_fifo);
+        saveFiles(net, fd_fifo);
 
         close(fd_fifo);
+        freeNetworkStruct(net);
+
         exit(0);
         break; 
     default:
-        if((fd_fifo=open(FIFO_PATH, O_WRONLY)) == - 1){
-            fprintf(stderr, "Error while creating FIFO; (%d): %s\n", errno, strerror(errno));
-            return 1;
+        if ((res = estConnection(&net) != E_SUCCESS)) {
+            logLibError(res, 0);
+            return res;
+        }     
+        if((fd_fifo=open(FIFO_PATH, O_WRONLY)) == -1){
+            logLibError(E_FIFO_OPEN, 1);
+            //return E_FIFO_OPEN;
         }
         Node *root = malloc(sizeof *root);
         memset(root, '\0', sizeof *root);
@@ -311,6 +374,8 @@ int synchronize(const char *rootPath, struct network *net){
         createFolderNode(root, net, fd_fifo);
 
         close(fd_fifo);
+        freeNetworkStruct(net);
+
         int status;
         int pid = wait(&status);
         printf("Pid: %d\n", pid);
@@ -324,6 +389,7 @@ int synchronize(const char *rootPath, struct network *net){
     }
     return 0;
 }
+
 /*
 void treeTraverse(Node *node){
     static int tab = 1;
@@ -398,36 +464,6 @@ void traverseXML(xmlNode *a_node, struct item *head) {
     }
 }
 */
-int getSpaceInfo(struct network *net) {
-    char *body = "<?xml version=\"1.0\" ?>"
-                 "<D:propfind xmlns:D=\"DAV:\">"
-                 "<D:allprop />"
-                    //"<D:prop>"
-                    //    "<D:quota-available-bytes/>"
-                    //    "<D:quota-used-bytes/>"
-                    //"</D:prop>"
-                 "</D:propfind>";
-    
-    char *sendline = malloc(MAXLINE+1);
-    snprintf(sendline, MAXLINE,
-		"PROPFIND / HTTP/1.1\r\n"
-		"Host: %s\r\n"
-        "Accept: */*\r\n"
-        "Depth: 0\r\n"
-        "Content-Type: text/xml\r\n"
-        "Content-Length: %d\r\n"
-        "Authorization: OAuth %s\r\n\r\n%s",  WHOST, strlen(body), TOKEN, body);
-
-    int res = send_to(sendline, strlen(sendline), net);
-    if (res != E_SUCCESS) {
-        return 0;
-    }
-    struct message *m = (struct message *)net->parser->data;
-    printf("Body: %s\n", m->body);
-    if (m->status == 404 || m->status == 400)
-        return 0;
-}
-
 /*
 int fileUpload(const char *file, long int file_size, const char *remPath, struct network *net) {
     SSL *ssl = net->ssl;

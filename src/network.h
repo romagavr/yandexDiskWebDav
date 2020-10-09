@@ -77,13 +77,7 @@ int on_body(http_parser *parser, const char* data, size_t length);
         
 int connect_to(struct network *net, const char *host);
 
-static int socketRead(struct network *net);
-static int socketWrite(const char *request, size_t size, SSL *ssl);
 int send_to(const char *request, size_t size, struct network *net);
 
 int initNetworkStruct(struct network **netw);
 void freeNetworkStruct(struct network *net);
-
-
-static int getSSLerror(SSL *ssl, int ret);
-static void messageReset(struct message *m);

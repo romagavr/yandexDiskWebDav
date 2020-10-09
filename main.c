@@ -1,19 +1,8 @@
 #include"src/client.h"
 
 int main(int argc, char *argv[]){
-    struct network *net = 0;
-    int res = -1;
-    res = initNetworkStruct(&net);
-    if (res != E_SUCCESS){
-        return 1;
-    }
 
-    res = connect_to(net,  WHOST);
-    if (res != E_SUCCESS){
-        return 1;
-    }
-
-    synchronize("/test", net);
+    synchronize("/test");
     // без слэша в начале  - 400
     // если нет такой директории - 404
     // в остальных случаях - 207
@@ -32,6 +21,5 @@ int main(int argc, char *argv[]){
     printf("Finished.\n");
     */
     //free(xml);
-    freeNetworkStruct(net);
     return 0;
 }

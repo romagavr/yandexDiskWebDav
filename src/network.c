@@ -1,5 +1,13 @@
 #include"network.h"
 
+
+static int getSSLerror(SSL *ssl, int ret);
+static void messageReset(struct message *m);
+
+static int socketRead(struct network *net);
+static int socketWrite(const char *request, size_t size, SSL *ssl);
+
+
 int on_chunk_header(http_parser *parser) {
     struct message *m = (struct message *)parser->data;
     if (m->chunked != 1)
@@ -198,6 +206,15 @@ static int socketRead(struct network *net){
             }
             if (m->status == 429){
                 ret = E_TOO_MANY_REQ;
+                break;
+            }
+            if (m->status == 400) {
+                ret = E_HTTP_STAT_400;
+                break;
+            }
+            if (m->status == 404) {
+                ret = E_HTTP_STAT_404;
+                break;
             }
             if (m->message_complete_cb_called) {
                 ret = E_SUCCESS;
@@ -229,15 +246,11 @@ int send_to(const char *request, size_t size, struct network *net){
     while(1) {
         ret = socketRead(net);
         if (ret == E_TOO_MANY_REQ){
-            printf("sleep\n");
             sleep(1);
             continue;
         }
         break;
-    }
-    if (ret != E_SUCCESS){
-        return ret;
-    }
+    }    
     return ret;
 }
 

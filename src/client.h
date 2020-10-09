@@ -35,7 +35,6 @@
 #define MAX_PATH_LEN 300
 
 typedef struct QNode {
-    char name[S_ITEM_LEN];
     char href[S_ITEM_LEN];
     int isFile;
 } QNode;
@@ -69,14 +68,11 @@ int uploadFile(const char *localPath, const char *remotePath, struct network *ne
 void treeTraverse(Node *node);
 
 Queue* initQueue(void);
-int destroyQueue(Queue *queue);
+void destroyQueue(Queue *queue);
 int changeQueueSize(Queue *queue);
 int addToQueue(Queue *queue, QNode *node);
 QNode* getFromQueue(Queue *queue);
 
 
-static int webdavGet(struct network *net, const char *filepath, char **file);
-static void parseXML(xmlNode *a_node, Node *node, QNode *qnode, int fifo);
-static void createFolderNode(Node *node, struct network *net, int fifo);
-static xmlNode* getFolderXml(const char *folder, struct network *net);
-int synchronize(const char *rootPath, struct network *net);
+int synchronize(const char *rootPath);
+
