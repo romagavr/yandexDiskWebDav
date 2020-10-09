@@ -1,24 +1,14 @@
 #include"src/client.h"
 
 int main(int argc, char *argv[]){
-    struct network *net = 0;
-    int res = -1;
-    res = initNetworkStruct(&net);
-    logMessage("fdsfsf");
-    if (res != E_SUCCESS){
-        return 1;
-    }
-    res = connect_to(net,  WHOST);
-    if (res != E_SUCCESS){
-        return 1;
-    }
 
+    synchronize("/test");
     // без слэша в начале  - 400
     // если нет такой директории - 404
     // в остальных случаях - 207
-    if (getFolderStruct("/books/", net) < 0) {
-        exit(EXIT_FAILURE);
-    }; 
+    //if (getFolderStruct("/Others/", net) < 0) {
+    //    exit(EXIT_FAILURE);
+    //}; 
 /*
     //getToken(ssl);
     int res = uploadFile("../res/2.png", "/", ssl);
@@ -31,6 +21,5 @@ int main(int argc, char *argv[]){
     printf("Finished.\n");
     */
     //free(xml);
-    freeNetworkStruct(net);
     return 0;
 }

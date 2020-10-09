@@ -1,19 +1,19 @@
 #include"error.h"
 
+static const char* getError(error_t err);
+
 static const char* getError(error_t err){
-    const char *error = 0;
-    if (err < ERROR_COUNT){
-        error = errArr[err];
-    }
-    return error;
+    if (err > ERROR_COUNT && err - MIN_ERR_ENUM < 0)
+        err = E_NOT_SPEC;
+    return errArr[err - MIN_ERR_ENUM];
 }
 
 void logLibError(error_t err, int printErrno){
-  const char *mes = getError(err);
-  if (err != 0)
-    fprintf(stderr, "Smth go wrong: %s\n", mes);
+  const char *m = getError(err);
   if (printErrno)
-    fprintf(stderr, "Errno: (%d: %s)", errno, strerror(errno));
+    logErrno(m);
+  else
+    fprintf(stderr, "Smth go wrong: %s\n", m);
 };
 
 void logSSLError(const char *message){
@@ -27,3 +27,9 @@ void logHParserError(const char *message){
 void logMessage(const char *msg){
         fprintf(stderr, "Message: %s\n", msg);
 }
+
+// client.c
+
+void logErrno(const char *mes){
+    fprintf(stderr, "** (%s) - Errno: (%d: %s)\n", mes, errno, strerror(errno));
+};
