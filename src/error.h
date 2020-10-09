@@ -26,6 +26,7 @@ typedef enum errors {
     E_HTTP_STAT_404,
     E_FIFO_OPEN,
     E_FIFO_CLOSE,
+    E_SYNC_ERROR,
     ERROR_COUNT,
 } error_t;
 
@@ -44,8 +45,9 @@ static const char *const errArr[] =
     "Sprintf error",
     "Http error - (400) Bad request",
     "Http error - (404) Not found",
-    "Error while opening FIFO"
-    "Error while closinging FIFO"
+    "Error while opening FIFO",
+    "Error while closinging FIFO",
+    "Synchronization error"
 };
 
 
@@ -55,3 +57,4 @@ void logHParserError(const char *message);
 void logMessage(const char *msg);
 
 void logErrno(const char *mes);
+void logSyncErr(const char *file, error_t err);

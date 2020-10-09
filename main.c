@@ -2,7 +2,10 @@
 
 int main(int argc, char *argv[]){
 
-    synchronize("/test");
+    int sync = 1;
+    const char *target = "/test";
+    if (sync)
+        synchronize(target);
     // без слэша в начале  - 400
     // если нет такой директории - 404
     // в остальных случаях - 207

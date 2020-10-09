@@ -33,3 +33,7 @@ void logMessage(const char *msg){
 void logErrno(const char *mes){
     fprintf(stderr, "** (%s) - Errno: (%d: %s)\n", mes, errno, strerror(errno));
 };
+
+void logSyncErr(const char *file, error_t err){
+    fprintf(stderr, "** Sync error while getting %s: (%d) - %s;\n", file, err, getError(err));
+};

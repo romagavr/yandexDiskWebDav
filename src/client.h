@@ -47,10 +47,9 @@ typedef struct Queue {
 
 
 typedef struct Node {
-    char href[S_ITEM_LEN];
+    struct Node* next;
 
-    struct Node* nodes[MAX_NODES];
-    size_t nodes_count;
+    char href[S_ITEM_LEN];
 } Node;
 
 struct file_system{

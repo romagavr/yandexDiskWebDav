@@ -6,7 +6,7 @@ static int webdavPropfind(struct network *net, const char *filepath, char **file
 static int estConnection(struct network **net);
 
 static void parseXML(xmlNode *a_node, Node *node, QNode *qnode, int fifo);
-static void createFolderNode(Node *node, struct network *net, int fifo);
+static int createFolderNode(Node *node, struct network *net, int fifo);
 
 
 static int webdavGet(struct network *net, const char *filepath, char **file) {
@@ -217,15 +217,15 @@ static void parseXML(xmlNode *a_node, Node *node, QNode *qnode, int fifo) {
             memset(qnode, '\0', sizeof *qnode);
             parseXML(xmlnd->children, node, qnode, fifo);
 
-            write(fifo, qnode, sizeof *qnode);
-
-            if (xmlnd != a_node && !qnode->isFile) {
-                Node *n = malloc(sizeof *n);
-                memset(n, 0, sizeof *n);
-                strcpy(n->href, qnode->href);
-
-                node->nodes[node->nodes_count] = n;
-                node->nodes_count++;
+            if (xmlnd != a_node) {
+                write(fifo, qnode, sizeof *qnode);
+                if (!qnode->isFile) {
+                    Node *n = malloc(sizeof *n);
+                    memset(n, '\0', sizeof *n);
+                    strcpy(n->href, qnode->href);
+                    n->next = node->next;
+                    node->next = n;
+                }
             }
         } else {
             if (strcmp((const char *)xmlnd->name, "href") == 0) { 
@@ -242,19 +242,14 @@ static void parseXML(xmlNode *a_node, Node *node, QNode *qnode, int fifo) {
     if (resp) free(qnode);
 }
 
-static void createFolderNode(Node *node, struct network *net, int fifo) {
-    if (node == 0) {
-        node = malloc(sizeof *node);
-        memset(node, 0, sizeof *node);
-        strcpy(node->href, "/");
-    }
+static int createFolderNode(Node *node, struct network *net, int fifo) {
+    if (!node)
+        return E_SYNC_ERROR;
 
     char *body = 0;
-    int res = webdavPropfind(net, node->href, &body);
-    if (res < 0) {
-        logLibError(res, 0);
-        return;
-    }
+    int res = 0;
+    if ((res = webdavPropfind(net, node->href, &body)) < 0)
+        return res;
 
     // TODO: Free *doc
     //
@@ -264,10 +259,14 @@ static void createFolderNode(Node *node, struct network *net, int fifo) {
     parseXML(root, node, 0, fifo); 
     xmlFreeNode(root);
 
-    for(size_t i = 0; i < node->nodes_count; i++) {
-        createFolderNode(node->nodes[i], net, fifo);
-        // TODO: delete node[i]
+    Node *tnode = 0;
+    while ((tnode = node->next)) {
+       if ((res = createFolderNode(tnode, net, fifo)) < 0)
+            logSyncErr(tnode->href, res);
+       node->next = tnode->next;
+       free(tnode);
     }
+    return 0;
 }
 
 int saveFiles(struct network *net, int fifo){
@@ -310,6 +309,7 @@ int saveFiles(struct network *net, int fifo){
         } else {
             if (mkdir(path, 0777) == -1)
                 logErrno("Creating folder error");
+            else logMessage("OK");
         }
      }
 
@@ -335,6 +335,12 @@ int synchronize(const char *rootPath){
         fprintf(stderr, "Error while creating FIFO; (%d): %s\n", errno, strerror(errno));
         return 1;
     };
+
+    char path[MAX_PATH_LEN] = {'\0'};
+    strcat(path, DOWNLOAD_PATH);
+    strcat(path, rootPath);
+    if (mkdir(path, 0777))
+        logErrno("Creating folder error");
 
     switch (fork())
     {
@@ -368,11 +374,14 @@ int synchronize(const char *rootPath){
             //return E_FIFO_OPEN;
         }
         Node *root = malloc(sizeof *root);
-        memset(root, '\0', sizeof *root);
+        root->next = 0;
+        memset(root->href, '\0', sizeof *root->href);
         strcpy(root->href, rootPath);
 
-        createFolderNode(root, net, fd_fifo);
+        if ((res = createFolderNode(root, net, fd_fifo)) < 0)
+            logSyncErr(root->href, res);
 
+        free(root);
         close(fd_fifo);
         freeNetworkStruct(net);
 
