@@ -7,15 +7,10 @@
 
 double tiL, tiA;
 
-struct A {
-    struct A *next, *prev;
-    int val;
-};
-
-int testArray(int testSize) {
+int testArray(void) {
     clock_t begin = clock();
     int size2 = ARRAY_INIT_SIZE;
-    int *arr = malloc(size2 * sizeof(struct A));
+    int *arr = malloc(size2 * sizeof(int));
     if (arr == 0){
         return 1;
     }
@@ -26,16 +21,14 @@ int testArray(int testSize) {
     int *size = arr + ARRAY_INIT_SIZE;
     int *tmp = 0;
     int *it = arr;
-    int val = rand() % 10000;
     while (1) {
-        *it = 0;
-        *(it+16) = val;
+        *it = rand() % 10000;
         //printf("%d\n", *it);
         it++;
         if (it >= size) {
-            if (size2 * 2 > testSize)
+            if (size2 * 2 > TEST_SIZE)
                 break;
-            tmp = realloc(arr, size2 * 2 * sizeof(struct A));
+            tmp = realloc(arr, size2 * 2 * sizeof(int));
             if (tmp == 0){
                 printf("Realloc error\n");
                 return 1;
@@ -49,11 +42,15 @@ int testArray(int testSize) {
     }
     clock_t end = clock();
     tiA = (double)(end - begin) / CLOCKS_PER_SEC;
-    //printf("Array time for %d elements %f\n", testSize, tiA);
+    //printf("Array time for %d elements %f\n", TEST_SIZE, tiA);
     free(arr);
     return 0;
 }
 
+struct A {
+    struct A *next, *prev;
+    int val;
+};
 
 int addToList(struct A *head, int val){
     if (head->prev == 0){
@@ -62,10 +59,10 @@ int addToList(struct A *head, int val){
         head->prev = head;
     } else {
         struct A *tmp = malloc(sizeof(struct A));
-        /*if (tmp == 0){
+        if (tmp == 0){
             perror("malloc failed in addToList");
             return 1;
-        }*/
+        }
         head->prev->next = tmp;
         tmp->prev = head->prev;
         head->prev = tmp;
@@ -94,67 +91,47 @@ void listFree(struct A *head){
     head->next = head->prev = 0;
 }
 
-int testLinkedList(int testSize) {
+int testLinkedList(void) {
     clock_t begin = clock();
 
     time_t t = 0;
     srand((unsigned) time(&t));
-    struct A *head = malloc(sizeof *head);
-    head->val = 0;
-    head->next = head;
-    head->prev = head;
-    int val = 0;
-    val = rand() % 10000;
-    for (int i=1; i<testSize; i++){
-        struct A *tmp = malloc(sizeof(struct A));
-        if (tmp == 0){
-            perror("malloc failed in addToList");
+    struct A head = {0};
+    int value = 0;
+    int res = 0;
+    for (int i=0; i<TEST_SIZE; i++){
+        value = rand() % 10000;
+        res = addToList(&head, value);
+        if (res != 0){
+            printf("Test of linked list error\n");
             return 1;
         }
-        head->prev->next = tmp;
-        tmp->prev = head->prev;
-        head->prev = tmp;
-        tmp->next = head;
-        tmp->val = val;
     }
 
     clock_t end = clock();
     tiL = (double)(end - begin) / CLOCKS_PER_SEC;
-    //printf("Linked list time for %d elements %f\n", testSize, tiL);
-    listFree(head);
-    free(head);
+    printf("Linked list time for %d elements %f\n", TEST_SIZE, tiL);
+    listFree(&head);
     //listTraverse(&head);
     return 0;
 };
 
 
-int main(void){
+int main(){
     //testArray();
-    int count = 10;
-    double sumL, sumA;
-    int begin = 1200;
-    int end = 10000;
-    for (int j = begin; j < end; j += 100) {
-        sumL = sumA = 0;
-        printf("-------Test for %d elements-------\n", j);
-        for (int i=0; i<count; i++){
-            testLinkedList(j);
-            testArray(j);
-            if (i != 0) {
-                sumL += tiL;
-                sumA += tiA;
-            }
-        }
-        tiL = (double)sumL/count;
-        tiA = (double)sumA/count;
-
-        if (sumL != 0)
-            printf("Avarage value for linked list (%d elements) = %f (%d iters)\n", j, tiL, count); 
-        if (sumA != 0)
-            printf("Avarage value for array (%d elements) = %f (%d iters)\n", j, tiA, count); 
-        if (tiA != 0 && tiL != 0){
-            printf("Avarage ratio: %s faster in %f\n", (tiL > tiA) ? "array" : "linked list",  (tiL > tiA) ? (double)(tiL / tiA) : (double)(tiA / tiL));
-        }
+    for (int i=0; i<5; i++){
+        testLinkedList();
+        testArray();
     }
+    if (tiA != 0 && tiL != 0){
+        printf("Ratio: %f\n", (double)(tiL / tiA));
+    }
+/*    int a = 1;
+    int b = 1;
+    int c = 2;
+    if (a & b && (c = 3))
+        printf("c = %d\n", c);
+    printf("c = %d\n", c);
+    printf("end\n");*/
     return 0;
 }
