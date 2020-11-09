@@ -190,6 +190,7 @@ int addToQueue(Queue *queue, QNode *node) {
     queue->size++;
     memset(&(queue->data[queue->rear]), 0, sizeof queue->data[queue->rear]);
     memcpy((queue->data[queue->rear]).href, node->href, strlen(node->href));
+    memcpy((queue->data[queue->rear]).md5, node->md5, strlen(node->md5));
     (queue->data[queue->rear]).isFile = node->isFile;
     return 0;
 }
@@ -218,6 +219,7 @@ static void parseXML(xmlNode *a_node, Node *node, QNode *qnode, int fifo) {
             parseXML(xmlnd->children, node, qnode, fifo);
 
             if (xmlnd != a_node) {
+                //Eror checking
                 write(fifo, qnode, sizeof *qnode);
                 if (!qnode->isFile) {
                     Node *n = malloc(sizeof *n);
@@ -230,6 +232,8 @@ static void parseXML(xmlNode *a_node, Node *node, QNode *qnode, int fifo) {
         } else {
             if (strcmp((const char *)xmlnd->name, "href") == 0) { 
                 strcpy((char *)qnode->href, (const char *)xmlNodeGetContent(xmlnd));
+            } else if (strcmp((const char *)xmlnd->name, "getetag") == 0) { 
+                strcpy((char *)qnode->md5, (const char *)xmlNodeGetContent(xmlnd));
             } else if (strcmp((const char *)xmlnd->name, "resourcetype") == 0 && !xmlnd->children) { 
                 qnode->isFile = 1;
             }
@@ -269,6 +273,70 @@ static int createFolderNode(Node *node, struct network *net, int fifo) {
     return 0;
 }
 
+static char* getMD5sum(const char *str, int len){
+    unsigned char md5_hash[MD5_DIGEST_LENGTH];
+    char *md5_string = malloc(MD5_DIGEST_LENGTH * 2 + 1);
+    if (md5_string == 0){
+        fprintf(stderr, "Malloc failed. (%d)\n", errno);
+        return 0;
+    }
+    MD5_CTX md5;
+    if (MD5_Init(&md5) == 0){
+        fprintf(stderr, "MD5_Init failed. (%d)\n", errno);
+        return 0;
+    };
+
+    if (MD5_Init(&md5) == 0){
+        fprintf(stderr, "MD5_Init failed. (%d)\n", errno);
+        return 0;
+    };
+    if (MD5_Update(&md5, str, len) == 0){
+        fprintf(stderr, "MD5_Update failed. (%d)\n", errno);
+        return 0;
+    };
+                    printf("three\n");
+    if (MD5_Final(md5_hash, &md5) == 0){
+        fprintf(stderr, "MD5_Final failed. (%d)\n", errno);
+        return 0;
+    };
+    for (int i = 0; i < MD5_DIGEST_LENGTH; ++i)
+        sprintf(&md5_string[i*2], "%02x", (unsigned int)md5_hash[i]);
+    md5_string[MD5_DIGEST_LENGTH * 2] = '\0';
+    return md5_string;
+}
+
+static int getFileRaw(const char *path, char **out){
+    FILE *filefd = fopen(path, "rb");
+    if (filefd == 0){
+        fprintf(stderr, "fopen failed. (%d)\n", errno);
+        return 0;
+    }
+    fseek(filefd, 0, SEEK_END);
+    int filesize = ftell(filefd);
+    if (filesize == -1){
+        fclose(filefd);
+        fprintf(stderr, "filesize getting error. (%d)\n", errno);
+        return 0;
+    }
+    rewind(filefd);
+    char *raw = malloc(filesize);
+    if (raw == 0){
+        fprintf(stderr, "Malloc() failed. (%d)\n", errno);
+        return 0;
+    }
+    int res = fread(raw, 1, filesize, filefd);
+    printf("raw %d\n", filesize);
+    fclose(filefd);
+
+    if (res != filesize) {
+        free(raw);
+        fprintf(stderr, "fread error. (%d)\n", errno);
+        return 0;
+    }
+    *out = raw;
+    return filesize;
+}
+
 int saveFiles(struct network *net, int fifo){
     Queue *q = initQueue();
     QNode *n = 0;
@@ -276,8 +344,13 @@ int saveFiles(struct network *net, int fifo){
     char *file = 0;
     char path[MAX_PATH_LEN] = DOWNLOAD_PATH; 
     int fsize;
-    int crFd;
+    int crFd, fdd;
     int len = 0;
+    int filesize = 0;
+    int res = 0;
+    char *raw = 0;
+    char *md5str = 0;
+    int filelen;
 
     for (;;) {
         while (read(fifo, &tmpn, sizeof tmpn) > 0) {
@@ -290,6 +363,30 @@ int saveFiles(struct network *net, int fifo){
         memset(path + strlen(DOWNLOAD_PATH), '\0', MAX_PATH_LEN - strlen(DOWNLOAD_PATH));
         strcat(path, n->href);
         if (n->isFile){
+            fdd = open(path, O_RDONLY | O_EXCL | O_CREAT, 0777);
+            if (fdd == -1){
+                if (errno == EEXIST){
+                    filelen = getFileRaw(path, &raw);      
+                    if (filelen == 0){
+                        logMessage("File reading error");
+                        continue;
+                    }
+                    printf("two %d\n", filelen);
+                    md5str = getMD5sum(raw, filelen);
+                    if (md5str == 0){
+                        free(raw);
+                        logMessage("Getting MD5sum error");
+                        continue;
+                    }
+                    printf("Calculated md5: %s\n", md5str);
+                    printf("Remote md5 %s\n", n->md5);
+                    free(raw);
+                    free(md5str);
+                } else {
+                    logErrno("Failed to open file");
+                    continue;
+                }
+            }
             if ((fsize = webdavGet(net, n->href, &file)) < 0) {
                 logLibError(fsize, 0);
                 continue; 
@@ -307,8 +404,13 @@ int saveFiles(struct network *net, int fifo){
             printf("Created file: %s (%d bytes)\n", path, fsize);
             close(crFd);
         } else {
-            if (mkdir(path, 0777) == -1)
-                logErrno("Creating folder error");
+            if (mkdir(path, 0777) == -1){
+                if (errno == EEXIST)
+                    logMessage("Folder exists");
+                else 
+                    logErrno("Creating folder error");
+                
+            }
             else logMessage("OK");
         }
      }

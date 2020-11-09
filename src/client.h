@@ -36,6 +36,7 @@
 
 typedef struct QNode {
     char href[S_ITEM_LEN];
+    char md5[MD5_DIGEST_LENGTH * 2 + 1];
     int isFile;
 } QNode;
 
