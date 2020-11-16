@@ -29,7 +29,7 @@ int on_header_field(http_parser *parser, const char *data, size_t length) {
         m->num_headers++;
     strncat(m->headers[m->num_headers-1][0], data, length);
     m->last_header_element = FIELD;
-    ///printf("Header field: %.*s\n", (int)length, data);
+    //printf("Header field: %.*s\n", (int)length, data);
     return 0;
 }
 
@@ -67,6 +67,7 @@ int on_message_complete(http_parser *parser) {
 //TODO обработка ошибок в call_back
 int on_body(http_parser *parser, const char* data, size_t length) {
   struct message *m = (struct message *)parser->data;
+  m->message_begin_cb_called = 1;
   int t_len = m->parsed_length + length;
   if (t_len > m->body_size){
       char *new = realloc(m->body, t_len * 2);
@@ -194,8 +195,57 @@ static int socketRead(struct network *net){
     while (1){
         memset(net->read, 0, RECEIVE_BUFFER_SIZE);
         bytes_rec = SSL_read(net->ssl, net->read, RECEIVE_BUFFER_SIZE);
+        //printf("read %d\n", bytes_rec);
         if (bytes_rec > 0) {
             ssize_t nparsed = http_parser_execute(net->parser, net->settings, net->read, bytes_rec);
+            //printf("Bytes rec: %d, Nparsed: %d, Status: %d\n", bytes_rec, nparsed, m->status);
+            if (net->parser->http_errno != 0){
+                printf("Errno\n");
+                // TODO: Не работает
+                //logHParserError(HTTP_PARSER_ERRNO((http_parser *)net->parser));
+                ret = E_HTTP_PARSER_FAILED;
+                break;
+            }
+            if (m->status == 429){
+                ret = E_TOO_MANY_REQ;
+                break;
+            }
+            if (m->status == 400) {
+                ret = E_HTTP_STAT_400;
+                break;
+            }
+            if (m->status == 404) {
+                ret = E_HTTP_STAT_404;
+                break;
+            }
+            if (m->message_complete_cb_called) {
+                ret = E_SUCCESS;
+                break;
+            }
+        } else {
+            ret = getSSLerror(net->ssl, bytes_rec);
+            break;
+        }
+    }  
+    return ret;
+}
+
+static int socketReadToFile(struct network *net, int fd){
+    int bytes_rec = 0;
+    int ret;
+    struct message *m = (struct message *)net->parser->data;
+
+    // TODO: Timeout - если долго нет ответа
+    while (1){
+        bytes_rec = SSL_read(net->ssl, net->read, RECEIVE_BUFFER_SIZE);
+        printf("read %d\n", bytes_rec);
+        if (bytes_rec > 0) {
+            ssize_t nparsed = http_parser_execute(net->parser, net->settings, net->read, bytes_rec);
+            if (m->message_begin_cb_called){
+                fwrite(m->body, sizeof(char), m->parsed_length, fd);
+                memset(m->body, 0, m->parsed_length);
+                m->parsed_length = 0;
+            }
             //printf("Bytes rec: %d, Nparsed: %d, Status: %d\n", bytes_rec, nparsed, m->status);
             if (net->parser->http_errno != 0){
                 printf("Errno\n");
@@ -243,8 +293,28 @@ int send_to(const char *request, size_t size, struct network *net){
     if (ret != E_SUCCESS){
         return E_SEND;
     }
+    struct message *m = (struct message *)net->parser->data;
+    //printf("start\n");
     while(1) {
         ret = socketRead(net);
+    	//printf("%d \n", m->parsed_length);
+        if (ret == E_TOO_MANY_REQ){
+            sleep(1);
+            continue;
+        }
+        break;
+    }    
+    //printf("end\n");
+    return ret;
+}
+
+int send_to1(const char *request, struct network *net, int fd){
+    int ret = socketWrite(request, strlen(request), net->ssl);
+    if (ret != E_SUCCESS){
+        return E_SEND;
+    }
+    while(1) {
+        ret = socketReadToFile(net, fd);
         if (ret == E_TOO_MANY_REQ){
             sleep(1);
             continue;

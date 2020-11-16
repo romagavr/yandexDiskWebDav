@@ -42,6 +42,43 @@ static int webdavGet(struct network *net, const char *filepath, char **file) {
     return m->parsed_length;
 }
 
+static int webdavGet1(struct network *net, const char *filepath, const char* path) {
+    const char *req = "GET %s HTTP/1.1\r\n"
+		              "Host: %s\r\n"
+                      "Accept: */*\r\n"
+                      "Authorization: OAuth %s\r\n\r\n";
+    ssize_t headerLen = snprintf(NULL, 0, req, filepath, WHOST, TOKEN) + 1; 
+    char *header = malloc(headerLen);
+    MALLOC_ERROR_CHECK(header);
+    ssize_t len = snprintf(header, headerLen, req, filepath, WHOST, TOKEN);
+    if (len < 0 || len >= headerLen)
+        return E_SPRINTF;
+
+    FILE *file = fopen(path, "wbx");
+    char ex = 0;
+    if (file == 0) {
+        ex = 1;
+        char newPath[strlen(path) + 1]; 
+        strcpy(newPath, path);
+        char *pos = strrchr(newPath, '/');
+        char name[strlen(path) - strlen(pos) + 1];
+        strcpy(name, pos+1);
+        strcpy(pos + 1, ".ttmp");
+        file = fopen(newPath, "wb");
+        printf("Name: %s\n", name);
+        printf("New path: %s\n", newPath);
+    } 
+
+    int res = send_to1(header, net, file);
+    free(header);
+    
+    fclose(file);
+    if (res != E_SUCCESS)
+        return res;
+
+    return 123;
+}
+
 static int webdavPropfind(struct network *net, const char *filepath, char **file) {
     const char *req = "PROPFIND %s HTTP/1.1\r\n"
                       "Host: %s\r\n"
@@ -280,6 +317,10 @@ int saveFiles(struct network *net, int fifo){
     int crFd;
     int len = 0;
 
+
+    char newPath[1000]; 
+    char name[50];
+    char *pos = 0;
     for (;;) {
         while (read(fifo, &tmpn, sizeof tmpn) > 0) {
             addToQueue(q, &tmpn);
@@ -291,6 +332,18 @@ int saveFiles(struct network *net, int fifo){
         memset(path + strlen(DOWNLOAD_PATH), '\0', MAX_PATH_LEN - strlen(DOWNLOAD_PATH));
         strcat(path, n->href);
         if (n->isFile){
+
+        strcpy(newPath, path);
+        pos = strrchr(newPath, '/');
+        printf("New path len: %d\n", strlen(path) - strlen(pos) + 1);
+        printf("New path len2: %s\n", path);
+        strcpy(name, pos+1);
+        printf("New path len2: %s\n", path);
+        strcpy(pos + 1, ".ttmp");
+        printf("New path len2: %s\n", path);
+        printf("Name: %s\n", name);
+        printf("New path: %s\n", newPath);
+
             if ((fsize = webdavGet(net, n->href, &file)) < 0) {
                 logLibError(fsize, 0);
                 continue; 

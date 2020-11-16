@@ -81,3 +81,5 @@ int send_to(const char *request, size_t size, struct network *net);
 
 int initNetworkStruct(struct network **netw);
 void freeNetworkStruct(struct network *net);
+
+int send_to1(const char *request, struct network *net, int fd);
