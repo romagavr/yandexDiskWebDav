@@ -4,12 +4,11 @@
 #include<stdlib.h>
 #include<unistd.h>
 
-#define _XOPEN_SOURCE 500
 #include<ftw.h>
 #include<string.h>
 #include<stdint.h>
 
-#define BUF_LEN (10 * (sizeof(struct inotify_event) + 256 + 1))
+#define BUF_LEN (10 * (sizeof(struct inotify_event) + NAME_MAX + 1))
 
 #define WATCH_PATH "/home/roman/Documents/clang/yandexDiskWebDav/build/inotTest/"
 #define MAX_OPEN_DESCR 20

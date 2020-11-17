@@ -192,6 +192,7 @@ int addToQueue(Queue *queue, QNode *node) {
     memcpy((queue->data[queue->rear]).href, node->href, strlen(node->href));
     memcpy((queue->data[queue->rear]).md5, node->md5, strlen(node->md5));
     (queue->data[queue->rear]).isFile = node->isFile;
+    (queue->data[queue->rear]).fileLen = node->fileLen;
     return 0;
 }
 
@@ -234,6 +235,8 @@ static void parseXML(xmlNode *a_node, Node *node, QNode *qnode, int fifo) {
                 strcpy((char *)qnode->href, (const char *)xmlNodeGetContent(xmlnd));
             } else if (strcmp((const char *)xmlnd->name, "getetag") == 0) { 
                 strcpy((char *)qnode->md5, (const char *)xmlNodeGetContent(xmlnd));
+            } else if (strcmp((const char *)xmlnd->name, "getcontentlength") == 0) { 
+                qnode->fileLen = atol((const char *)xmlNodeGetContent(xmlnd));
             } else if (strcmp((const char *)xmlnd->name, "resourcetype") == 0 && !xmlnd->children) { 
                 qnode->isFile = 1;
             }
@@ -273,7 +276,14 @@ static int createFolderNode(Node *node, struct network *net, int fifo) {
     return 0;
 }
 
-static char* getMD5sum(const char *str, int len){
+#define MD5_UPDATE_LEN 1024 
+static char* getMD5sum(const char *path){
+    FILE *filefd = fopen(path, "rb");
+    if (filefd == 0){
+        fprintf(stderr, "fopen failed. (%d)\n", errno);
+        return 0;
+    }
+
     unsigned char md5_hash[MD5_DIGEST_LENGTH];
     char *md5_string = malloc(MD5_DIGEST_LENGTH * 2 + 1);
     if (md5_string == 0){
@@ -290,15 +300,17 @@ static char* getMD5sum(const char *str, int len){
         fprintf(stderr, "MD5_Init failed. (%d)\n", errno);
         return 0;
     };
-    if (MD5_Update(&md5, str, len) == 0){
-        fprintf(stderr, "MD5_Update failed. (%d)\n", errno);
-        return 0;
-    };
-                    printf("three\n");
+    int bytes;
+    char raw[MD5_UPDATE_LEN];
+    while ((bytes = fread(raw, 1, MD5_UPDATE_LEN, filefd)) != 0)
+        MD5_Update (&md5, raw, bytes);
+    fclose(filefd);
+
     if (MD5_Final(md5_hash, &md5) == 0){
         fprintf(stderr, "MD5_Final failed. (%d)\n", errno);
         return 0;
     };
+
     for (int i = 0; i < MD5_DIGEST_LENGTH; ++i)
         sprintf(&md5_string[i*2], "%02x", (unsigned int)md5_hash[i]);
     md5_string[MD5_DIGEST_LENGTH * 2] = '\0';
@@ -342,15 +354,11 @@ int saveFiles(struct network *net, int fifo){
     QNode *n = 0;
     QNode tmpn = {0};
     char *file = 0;
-    char path[MAX_PATH_LEN] = DOWNLOAD_PATH; 
-    int fsize;
-    int crFd, fdd;
-    int len = 0;
-    int filesize = 0;
-    int res = 0;
-    char *raw = 0;
     char *md5str = 0;
-    int filelen;
+    char path[MAX_PATH_LEN] = DOWNLOAD_PATH; 
+    int fdd, len, fsize;
+    char ex = 0;
+
 
     for (;;) {
         while (read(fifo, &tmpn, sizeof tmpn) > 0) {
@@ -363,46 +371,53 @@ int saveFiles(struct network *net, int fifo){
         memset(path + strlen(DOWNLOAD_PATH), '\0', MAX_PATH_LEN - strlen(DOWNLOAD_PATH));
         strcat(path, n->href);
         if (n->isFile){
+            ex = 0;
+            printf("Filelen %ld\n", n->fileLen);
             fdd = open(path, O_RDONLY | O_EXCL | O_CREAT, 0777);
-            if (fdd == -1){
-                if (errno == EEXIST){
-                    filelen = getFileRaw(path, &raw);      
-                    if (filelen == 0){
-                        logMessage("File reading error");
-                        continue;
-                    }
-                    printf("two %d\n", filelen);
-                    md5str = getMD5sum(raw, filelen);
+            //Если ошибка, либо файл существует
+            if (fdd == -1) {
+                //Если файл существует
+                if (errno == EEXIST)){
+                    md5str = getMD5sum(path); //считаем md5
                     if (md5str == 0){
-                        free(raw);
                         logMessage("Getting MD5sum error");
                         continue;
                     }
-                    printf("Calculated md5: %s\n", md5str);
-                    printf("Remote md5 %s\n", n->md5);
-                    free(raw);
+                    ex = (strcmp(md5str, n->md5) == 0) ? 1 : 2;
                     free(md5str);
-                } else {
-                    logErrno("Failed to open file");
+                } else { //произошла ошибка открытия файла
+                    logErrno("Open file to write");
                     continue;
                 }
-            }
-            if ((fsize = webdavGet(net, n->href, &file)) < 0) {
-                logLibError(fsize, 0);
-                continue; 
-            }
-            if ((crFd = open(path, O_CREAT | O_WRONLY, 0777)) == -1){
-                logErrno("Open file to write");
-                continue;
-            }
-            len = 0;
-            while (len != fsize) {
-                if ((len = write(crFd, file, fsize)) == -1) {
-                    logErrno("Writing to file error");
+            } else close(fdd);
+
+            if (ex != 1) {
+                char pathForWrite[strlen(path) + 10];
+                strcpy(pathForWrite, path);
+                if (ex == 2) {
+                    char *pos = strchr(pathForWrite, '/');
+                    if (pos == 0) 
+                        continue;
+                    *(pos + 1) = '\0';
+                    strcat(pathForWrite, ".tmpfile");
                 }
+                if ((fsize = webdavGet(net, n->href, &file)) < 0) {
+                    logLibError(fsize, 0);
+                    continue; 
+                }
+                if ((fdd = open(path, O_CREAT | O_WRONLY, 0777)) == -1){
+                    logErrno("Open file to write");
+                    continue;
+                }
+                len = 0;
+                while (len != fsize) {
+                    if ((len = write(fdd, file, fsize)) == -1) {
+                        logErrno("Writing to file error");
+                    }
+                }
+                printf("Created file: %s (%d bytes)\n", path, fsize);
+                close(fdd);
             }
-            printf("Created file: %s (%d bytes)\n", path, fsize);
-            close(crFd);
         } else {
             if (mkdir(path, 0777) == -1){
                 if (errno == EEXIST)

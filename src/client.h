@@ -34,9 +34,13 @@
 #define DOWNLOAD_PATH "/home/roman/Documents/clang/yandexDiskWebDav/build"
 #define MAX_PATH_LEN 300
 
+//TODO: char href[S_ITEM_LEN] - S_ITEM_LEN must be variable
+//int href_len
+//char href[];
 typedef struct QNode {
     char href[S_ITEM_LEN];
     char md5[MD5_DIGEST_LENGTH * 2 + 1];
+    long fileLen;
     int isFile;
 } QNode;
 
