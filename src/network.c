@@ -230,44 +230,45 @@ static int socketRead(struct network *net){
     return ret;
 }
 
-static int socketReadToFile(struct network *net, int fd){
+static int socketReadToFile(struct network *net, FILE *file){
     int bytes_rec = 0;
     int ret;
     struct message *m = (struct message *)net->parser->data;
+    ssize_t nparsed;
 
     // TODO: Timeout - если долго нет ответа
     while (1){
         bytes_rec = SSL_read(net->ssl, net->read, RECEIVE_BUFFER_SIZE);
-        printf("read %d\n", bytes_rec);
         if (bytes_rec > 0) {
-            ssize_t nparsed = http_parser_execute(net->parser, net->settings, net->read, bytes_rec);
-            if (m->message_begin_cb_called){
-                fwrite(m->body, sizeof(char), m->parsed_length, fd);
+            nparsed = http_parser_execute(net->parser, net->settings, net->read, bytes_rec);
+            if (m->parsed_length > 0){
+                fwrite(m->body, sizeof(char), m->parsed_length, file);
                 memset(m->body, 0, m->parsed_length);
                 m->parsed_length = 0;
             }
-            //printf("Bytes rec: %d, Nparsed: %d, Status: %d\n", bytes_rec, nparsed, m->status);
+
             if (net->parser->http_errno != 0){
-                printf("Errno\n");
-                // TODO: Не работает
-                //logHParserError(HTTP_PARSER_ERRNO((http_parser *)net->parser));
                 ret = E_HTTP_PARSER_FAILED;
                 break;
             }
-            if (m->status == 429){
-                ret = E_TOO_MANY_REQ;
-                break;
-            }
-            if (m->status == 400) {
-                ret = E_HTTP_STAT_400;
-                break;
-            }
-            if (m->status == 404) {
-                ret = E_HTTP_STAT_404;
-                break;
-            }
-            if (m->message_complete_cb_called) {
+            if (m->status == 200 && m->message_complete_cb_called){
                 ret = E_SUCCESS;
+                break;
+            } else if (m->status != 200) {
+                switch (m->status)
+                {
+                    case 429:
+                        ret = E_TOO_MANY_REQ;
+                        break;
+                    case 400:
+                        ret = E_HTTP_STAT_400;
+                        break;
+                    case 404:
+                        ret = E_HTTP_STAT_404;
+                        break;
+                    default:
+                        break;
+                }
                 break;
             }
         } else {
@@ -308,13 +309,13 @@ int send_to(const char *request, size_t size, struct network *net){
     return ret;
 }
 
-int send_to1(const char *request, struct network *net, int fd){
+int send_to1(const char *request, struct network *net, FILE *file){
     int ret = socketWrite(request, strlen(request), net->ssl);
     if (ret != E_SUCCESS){
         return E_SEND;
     }
     while(1) {
-        ret = socketReadToFile(net, fd);
+        ret = socketReadToFile(net, file);
         if (ret == E_TOO_MANY_REQ){
             sleep(1);
             continue;

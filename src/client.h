@@ -32,7 +32,7 @@
 
 #define FIFO_PATH "./fifo"
 #define DOWNLOAD_PATH "/home/roman/Documents/clang/yandexDiskWebDav/build"
-#define MAX_PATH_LEN 300
+#define MAX_PATH_LEN 500
 
 typedef struct QNode {
     char href[S_ITEM_LEN];
