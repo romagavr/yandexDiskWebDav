@@ -32,7 +32,7 @@
 
 #define FIFO_PATH "./fifo"
 #define DOWNLOAD_PATH "/home/roman/Documents/clang/yandexDiskWebDav/build"
-#define MAX_PATH_LEN 300
+#define MAX_PATH_LEN 500
 
 //TODO: char href[S_ITEM_LEN] - S_ITEM_LEN must be variable
 //int href_len

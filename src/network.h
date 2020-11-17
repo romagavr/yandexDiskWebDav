@@ -29,7 +29,7 @@
 
 #define MAX_ELEMENT_HEADER_SIZE 500 
 #define MAX_HEADERS_COUNT 15
-#define RECEIVE_BUFFER_SIZE 3000
+#define RECEIVE_BUFFER_SIZE 16384
 #define BODY_SIZE 3000
 
 #define SSL_ERMES_SIZE 300
@@ -81,3 +81,5 @@ int send_to(const char *request, size_t size, struct network *net);
 
 int initNetworkStruct(struct network **netw);
 void freeNetworkStruct(struct network *net);
+
+int send_to1(const char *request, struct network *net, FILE *file);

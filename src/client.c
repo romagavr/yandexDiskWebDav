@@ -42,6 +42,47 @@ static int webdavGet(struct network *net, const char *filepath, char **file) {
     return m->parsed_length;
 }
 
+static int webdavGet1(struct network *net, const char *remotePath) {
+    const char *req = "GET %s HTTP/1.1\r\n"
+		              "Host: %s\r\n"
+                      "Accept: */*\r\n"
+                      "Authorization: OAuth %s\r\n\r\n";
+    ssize_t headerLen = snprintf(NULL, 0, req, remotePath, WHOST, TOKEN) + 1; 
+    char *header = malloc(headerLen);
+    MALLOC_ERROR_CHECK(header);
+    ssize_t len = snprintf(header, headerLen, req, remotePath, WHOST, TOKEN);
+    if (len < 0 || len >= headerLen)
+        return E_SPRINTF;
+
+    char localPath[1000] = DOWNLOAD_PATH;
+    memcpy(localPath + strlen(DOWNLOAD_PATH), remotePath, strlen(remotePath) + 1);
+    FILE *file = fopen(localPath, "wbx");
+    char ex = 0;
+    int last;
+    char newPath[600];
+    memcpy(newPath, localPath, strlen(localPath) + 1);
+    if (file == 0) {
+        ex = 1;
+        last = strrchr(localPath, '/') - localPath + 1;
+        memcpy(newPath + last, ".ttmp", strlen(".ttmp") + 1);
+        file = fopen(newPath, "wb");
+    } 
+
+    int res = send_to1(header, net, file);
+
+    fclose(file);
+    free(header);
+
+    if (ex){
+        remove(localPath);
+        rename(newPath, localPath);
+    }
+    if (res != E_SUCCESS)
+        return res;
+
+    return 123;
+}
+
 static int webdavPropfind(struct network *net, const char *filepath, char **file) {
     const char *req = "PROPFIND %s HTTP/1.1\r\n"
                       "Host: %s\r\n"
@@ -360,6 +401,10 @@ int saveFiles(struct network *net, int fifo){
     char ex = 0;
 
 
+    char newPath[1000]; 
+    char name[50];
+    char *pos = 0;
+    int last;
     for (;;) {
         while (read(fifo, &tmpn, sizeof tmpn) > 0) {
             addToQueue(q, &tmpn);
@@ -367,11 +412,12 @@ int saveFiles(struct network *net, int fifo){
         if (q->size == 0)
             break;
 
+        //Path: /home/roman/Documents/clang/yandexDiskWebDav/build/test/T_kormen_Ch_leyzerson_R_rivest_K_shtayn_-_Algoritmy_Postroenie_I_Analiz_-_2013.pdf
+        //New path: /home/roman/Documents/clang/yandexDiskWebDav/build/test/.ttmp
+        //Name: T_kormen_Ch_leyzerson_R_rivest_K_shtayn_-_Algoritmy_Postroenie_I_Analiz_-_2013.pdf
         n = getFromQueue(q);
-        memset(path + strlen(DOWNLOAD_PATH), '\0', MAX_PATH_LEN - strlen(DOWNLOAD_PATH));
-        strcat(path, n->href);
         if (n->isFile){
-            ex = 0;
+           /* ex = 0;
             printf("Filelen %ld\n", n->fileLen);
             fdd = open(path, O_RDONLY | O_EXCL | O_CREAT, 0777);
             //Если ошибка, либо файл существует
@@ -407,7 +453,27 @@ int saveFiles(struct network *net, int fifo){
                 }
                 if ((fdd = open(path, O_CREAT | O_WRONLY, 0777)) == -1){
                     logErrno("Open file to write");
-                    continue;
+                    continue;*/
+            webdavGet1(net, n->href);
+            printf("Created file: %s\n", path);
+            /*
+            last = strrchr(path, '/') - path + 1;
+            memcpy(newPath, path, strlen(path) + 1);
+            memcpy(newPath + last, ".ttmp", strlen(".ttmp") + 1);
+            memcpy(name, path + last, strlen(path) + 1);
+
+            if ((fsize = webdavGet(net, n->href, &file)) < 0) {
+                logLibError(fsize, 0);
+                continue; 
+            }
+            if ((crFd = open(path, O_CREAT | O_WRONLY, 0777)) == -1){
+                logErrno("Open file to write");
+                continue;
+            }
+            len = 0;
+            while (len != fsize) {
+                if ((len = write(crFd, file, fsize)) == -1) {
+                    logErrno("Writing to file error");
                 }
                 len = 0;
                 while (len != fsize) {
@@ -418,6 +484,7 @@ int saveFiles(struct network *net, int fifo){
                 printf("Created file: %s (%d bytes)\n", path, fsize);
                 close(fdd);
             }
+<<<<<<< HEAD
         } else {
             if (mkdir(path, 0777) == -1){
                 if (errno == EEXIST)
@@ -427,6 +494,15 @@ int saveFiles(struct network *net, int fifo){
                 
             }
             else logMessage("OK");
+=======
+            printf("Created file: %s (%d bytes)\n", path, fsize);
+            close(crFd);
+            */
+        } else {
+            memcpy(path + strlen(DOWNLOAD_PATH), n->href, strlen(n->href) + 1);
+            if (mkdir(path, 0777) == -1)
+                logErrno("Creating folder error");
+>>>>>>> 536a90865f6ccf4530ef45c8c8d283de93f03b17
         }
      }
 
