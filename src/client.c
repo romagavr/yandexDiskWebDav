@@ -42,7 +42,38 @@ static int webdavGet(struct network *net, const char *filepath, char **file) {
     return m->parsed_length;
 }
 
-static int webdavGet1(struct network *net, const char *remotePath) {
+static int webdavGet1(struct network *net, const char *remotePath, char *remoteMD5) {
+    char localPath[1000] = DOWNLOAD_PATH;
+    memcpy(localPath + strlen(DOWNLOAD_PATH), remotePath, strlen(remotePath) + 1);
+    FILE *file = fopen(localPath, "wbx");
+    char exist = 0;
+    int last;
+    char newPath[600];
+    if (file == 0) {
+        printf("File exists %s\n", remotePath);
+        //file exists -> check md5 sum
+        if (remoteMD5 != 0) {
+            char *md5str = getMD5sum(localPath);
+            if (md5str == 0){
+                logMessage("Getting MD5sum error");
+                return -1111;
+            }
+            // TODO: check if remoteMD5 is null-term
+            if (strcmp(md5str, remoteMD5) == 0) {
+                printf("File %s not changed\n", remotePath);
+                //file the same
+                free(md5str);
+                return 111;
+            }
+        }
+        printf("**File %s changed, downloaded\n", remotePath);
+        exist = 1;
+        memcpy(newPath, localPath, strlen(localPath) + 1);
+        last = strrchr(localPath, '/') - localPath + 1;
+        memcpy(newPath + last, ".ttmp", strlen(".ttmp") + 1);
+        file = fopen(newPath, "wb");
+    }
+
     const char *req = "GET %s HTTP/1.1\r\n"
 		              "Host: %s\r\n"
                       "Accept: */*\r\n"
@@ -54,26 +85,12 @@ static int webdavGet1(struct network *net, const char *remotePath) {
     if (len < 0 || len >= headerLen)
         return E_SPRINTF;
 
-    char localPath[1000] = DOWNLOAD_PATH;
-    memcpy(localPath + strlen(DOWNLOAD_PATH), remotePath, strlen(remotePath) + 1);
-    FILE *file = fopen(localPath, "wbx");
-    char ex = 0;
-    int last;
-    char newPath[600];
-    memcpy(newPath, localPath, strlen(localPath) + 1);
-    if (file == 0) {
-        ex = 1;
-        last = strrchr(localPath, '/') - localPath + 1;
-        memcpy(newPath + last, ".ttmp", strlen(".ttmp") + 1);
-        file = fopen(newPath, "wb");
-    } 
-
     int res = send_to1(header, net, file);
 
     fclose(file);
     free(header);
 
-    if (ex){
+    if (exist){
         remove(localPath);
         rename(newPath, localPath);
     }
@@ -417,75 +434,10 @@ int saveFiles(struct network *net, int fifo){
         //Name: T_kormen_Ch_leyzerson_R_rivest_K_shtayn_-_Algoritmy_Postroenie_I_Analiz_-_2013.pdf
         n = getFromQueue(q);
         if (n->isFile){
-           /* ex = 0;
-            printf("Filelen %ld\n", n->fileLen);
-            fdd = open(path, O_RDONLY | O_EXCL | O_CREAT, 0777);
-            //Если ошибка, либо файл существует
-            if (fdd == -1) {
-                //Если файл существует
-                if (errno == EEXIST)){
-                    md5str = getMD5sum(path); //считаем md5
-                    if (md5str == 0){
-                        logMessage("Getting MD5sum error");
-                        continue;
-                    }
-                    ex = (strcmp(md5str, n->md5) == 0) ? 1 : 2;
-                    free(md5str);
-                } else { //произошла ошибка открытия файла
-                    logErrno("Open file to write");
-                    continue;
-                }
-            } else close(fdd);
-
-            if (ex != 1) {
-                char pathForWrite[strlen(path) + 10];
-                strcpy(pathForWrite, path);
-                if (ex == 2) {
-                    char *pos = strchr(pathForWrite, '/');
-                    if (pos == 0) 
-                        continue;
-                    *(pos + 1) = '\0';
-                    strcat(pathForWrite, ".tmpfile");
-                }
-                if ((fsize = webdavGet(net, n->href, &file)) < 0) {
-                    logLibError(fsize, 0);
-                    continue; 
-                }
-                if ((fdd = open(path, O_CREAT | O_WRONLY, 0777)) == -1){
-                    logErrno("Open file to write");
-                    continue;*/
-            webdavGet1(net, n->href);
-            printf("Created file: %s\n", path);
-            /*
-            last = strrchr(path, '/') - path + 1;
-            memcpy(newPath, path, strlen(path) + 1);
-            memcpy(newPath + last, ".ttmp", strlen(".ttmp") + 1);
-            memcpy(name, path + last, strlen(path) + 1);
-
-            if ((fsize = webdavGet(net, n->href, &file)) < 0) {
-                logLibError(fsize, 0);
-                continue; 
-            }
-            if ((crFd = open(path, O_CREAT | O_WRONLY, 0777)) == -1){
-                logErrno("Open file to write");
-                continue;
-            }
-            len = 0;
-            while (len != fsize) {
-                if ((len = write(crFd, file, fsize)) == -1) {
-                    logErrno("Writing to file error");
-                }
-                len = 0;
-                while (len != fsize) {
-                    if ((len = write(fdd, file, fsize)) == -1) {
-                        logErrno("Writing to file error");
-                    }
-                }
-                printf("Created file: %s (%d bytes)\n", path, fsize);
-                close(fdd);
-            }
-<<<<<<< HEAD
+            webdavGet1(net, n->href, n->md5);
+            printf("Created file: %s\n", n->href);
         } else {
+            memcpy(path + strlen(DOWNLOAD_PATH), n->href, strlen(n->href) + 1);
             if (mkdir(path, 0777) == -1){
                 if (errno == EEXIST)
                     logMessage("Folder exists");
@@ -494,15 +446,6 @@ int saveFiles(struct network *net, int fifo){
                 
             }
             else logMessage("OK");
-=======
-            printf("Created file: %s (%d bytes)\n", path, fsize);
-            close(crFd);
-            */
-        } else {
-            memcpy(path + strlen(DOWNLOAD_PATH), n->href, strlen(n->href) + 1);
-            if (mkdir(path, 0777) == -1)
-                logErrno("Creating folder error");
->>>>>>> 536a90865f6ccf4530ef45c8c8d283de93f03b17
         }
      }
 

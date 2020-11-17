@@ -80,3 +80,6 @@ QNode* getFromQueue(Queue *queue);
 
 int synchronize(const char *rootPath);
 
+
+
+static char* getMD5sum(const char *path);
