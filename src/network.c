@@ -7,21 +7,14 @@ static void messageReset(struct message *m);
 static int socketRead(struct network *net);
 static int socketWrite(const char *request, size_t size, SSL *ssl);
 
-
+/*
 int on_chunk_header(http_parser *parser) {
-    struct message *m = (struct message *)parser->data;
-    if (m->chunked != 1)
-        m->chunked = 1;
-    m->chunk_length = parser->content_length;
-    m->content_length += parser->content_length;
-    //printf("Chunk length: %d\n", parser->content_length);
     return 0;
 }
-
 int on_chunk_complete(http_parser *parser) {
-    
     return 0;
 }
+*/
 
 int on_header_field(http_parser *parser, const char *data, size_t length) {
     struct message *m = (struct message *)parser->data;
@@ -42,43 +35,52 @@ int on_header_value(http_parser *parser, const char *data, size_t length) {
 }
 
 int on_message_begin(http_parser *parser) {
-  struct message *m = (struct message *)parser->data;
-  messageReset(m);
-  m->message_begin_cb_called = 1;
-  //printf("\n***MESSAGE BEGIN***\n\n");
+  //messageReset((struct message *)parser->data);
   return 0;
 }
 
 int on_headers_complete(http_parser *parser) {
   struct message *m = (struct message *)parser->data;
   m->status = parser->status_code;
-  m->headers_complete_cb_called = 1;
   //printf("\n***HEADERS COMPLETE***\n\n");
   return 0;
 }
 
 int on_message_complete(http_parser *parser) {
-  struct message *m = (struct message *)parser->data;
-  m->message_complete_cb_called = 1;
-  //printf("\n***MESSAGE COMPLETE***\n\n");
-  return 0;
+    struct message *m = (struct message *)parser->data;
+    m->message_complete_cb_called = 1;
+    //printf("%s\n", m->body);
+    //assert(0);
+    //if (m->body != 0 && m->parsed_length != 0)
+    //    m->body[m->parsed_length] = '\0';
+    //printf("\n***MESSAGE COMPLETE***\n\n");
+    return 0;
 }
 
 //TODO обработка ошибок в call_back
 int on_body(http_parser *parser, const char* data, size_t length) {
-  struct message *m = (struct message *)parser->data;
-  m->message_begin_cb_called = 1;
-  int t_len = m->parsed_length + length;
-  if (t_len > m->body_size){
-      char *new = realloc(m->body, t_len * 2);
-      if (new == 0){
-         return HPE_CB_body;
-      }
-      m->body = new;
-      m->body_size = t_len * 2;
-  }
-  memcpy(m->body + m->parsed_length, data, length);
-  m->parsed_length = t_len;
+    struct message *m = (struct message *)parser->data;
+    if (m->isToFile) {
+        fwrite(data, sizeof(char), length, m->file);
+        m->parsed_length += length;
+    } else {
+        if (m->body == 0) {
+            m->body = malloc(BODY_SIZE);
+            MALLOC_ERROR_CHECK(m->body);
+        }
+        size_t newlen = m->parsed_length + length;
+        if (newlen > m->body_size){
+            m->body_size = newlen * 2;
+            char *new = realloc(m->body, m->body_size);
+            if (new == 0){
+                return HPE_CB_body;
+            }
+            m->body = new;
+        }
+        memcpy(m->body + m->parsed_length, data, length);
+        m->parsed_length = newlen;
+        //printf("%s\n", m->body);
+    }
   return 0;
 }
 
@@ -172,89 +174,27 @@ static int getSSLerror(SSL *ssl, int ret){
     ERR_free_strings();
     return r_error;
 }
-/*            printf("\n%.*s\n", bytes_rec, read+total_rec);
-            ssize_t nparsed = http_parser_execute(parser, settings, read + total_rec, bytes_rec);
-             
-            printf("\nStatus: %d\n", parser->status_code);
-            printf("\nStatus: %d\n", nparsed);
-            total_rec += bytes_rec;
-            struct message *m = (struct message *)parser->data;
-
-            printf("\n%d\n", m->status_code);
-            for (int i=0; i < m->num_headers; i++) {
-                printf("\nKey: %s; Value: %s\n", m->headers[i][0], m->headers[i][1]);
-            }
-            printf("\nRaw: %hhx", m->body); */
 
 static int socketRead(struct network *net){
-    int bytes_rec = 0;
+    size_t bytes_rec, nparsed, total_rec = 0;
     int ret;
     struct message *m = (struct message *)net->parser->data;
+    char *readbuf = malloc(RECEIVE_BUFFER_SIZE);
+    MALLOC_ERROR_CHECK(readbuf);
 
     // TODO: Timeout - если долго нет ответа
     while (1){
-        memset(net->read, 0, RECEIVE_BUFFER_SIZE);
-        bytes_rec = SSL_read(net->ssl, net->read, RECEIVE_BUFFER_SIZE);
-        //printf("read %d\n", bytes_rec);
+        bytes_rec = SSL_read(net->ssl, readbuf, RECEIVE_BUFFER_SIZE);
         if (bytes_rec > 0) {
-            ssize_t nparsed = http_parser_execute(net->parser, net->settings, net->read, bytes_rec);
-            //printf("Bytes rec: %d, Nparsed: %d, Status: %d\n", bytes_rec, nparsed, m->status);
-            if (net->parser->http_errno != 0){
-                printf("Errno\n");
-                // TODO: Не работает
-                //logHParserError(HTTP_PARSER_ERRNO((http_parser *)net->parser));
+            nparsed = http_parser_execute(net->parser, net->settings, readbuf, bytes_rec);
+            if (net->parser->http_errno != 0 || nparsed != bytes_rec){
                 ret = E_HTTP_PARSER_FAILED;
                 break;
             }
-            if (m->status == 429){
-                ret = E_TOO_MANY_REQ;
-                break;
-            }
-            if (m->status == 400) {
-                ret = E_HTTP_STAT_400;
-                break;
-            }
-            if (m->status == 404) {
-                ret = E_HTTP_STAT_404;
-                break;
-            }
-            if (m->message_complete_cb_called) {
+            if (m->message_complete_cb_called && (m->status == 207 || m->status == 200)){
                 ret = E_SUCCESS;
                 break;
-            }
-        } else {
-            ret = getSSLerror(net->ssl, bytes_rec);
-            break;
-        }
-    }  
-    return ret;
-}
-
-static int socketReadToFile(struct network *net, FILE *file){
-    int bytes_rec = 0;
-    int ret;
-    struct message *m = (struct message *)net->parser->data;
-    ssize_t nparsed;
-
-    // TODO: Timeout - если долго нет ответа
-    while (1){
-        bytes_rec = SSL_read(net->ssl, net->read, RECEIVE_BUFFER_SIZE);
-        if (bytes_rec > 0) {
-            nparsed = http_parser_execute(net->parser, net->settings, net->read, bytes_rec);
-            if (m->parsed_length > 0){
-                fwrite(m->body, sizeof(char), m->parsed_length, file);
-                memset(m->body, 0, m->parsed_length);
-                m->parsed_length = 0;
-            }
-
-            if (net->parser->http_errno != 0){
-                ret = E_HTTP_PARSER_FAILED;
-                break;
-            }
-            if (m->status == 200 && m->message_complete_cb_called){
-                ret = E_SUCCESS;
-                break;
-            } else if (m->status != 200) {
+            } else if (m->status != 207 && m->status != 200) {
                 switch (m->status)
                 {
                     case 429:
@@ -276,6 +216,7 @@ static int socketReadToFile(struct network *net, FILE *file){
             break;
         }
     }  
+    free(readbuf);
     return ret;
 }
 
@@ -289,57 +230,68 @@ static int socketWrite(const char *request, size_t size, SSL *ssl){
     return E_SUCCESS;
 }
 
-int send_to(const char *request, size_t size, struct network *net){
-    int ret = socketWrite(request, size, net->ssl);
-    if (ret != E_SUCCESS){
-        return E_SEND;
-    }
-    struct message *m = (struct message *)net->parser->data;
-    //printf("start\n");
-    while(1) {
-        ret = socketRead(net);
-    	//printf("%d \n", m->parsed_length);
-        if (ret == E_TOO_MANY_REQ){
-            sleep(1);
-            continue;
-        }
-        break;
-    }    
-    //printf("end\n");
-    return ret;
-}
-
 int send_to1(const char *request, struct network *net, FILE *file){
+    struct message *m = (struct message *)net->parser->data;
+    m->file = file;
+    m->isToFile = 1;
+
     int ret = socketWrite(request, strlen(request), net->ssl);
     if (ret != E_SUCCESS){
         return E_SEND;
     }
     while(1) {
-        ret = socketReadToFile(net, file);
+        ret = socketRead(net);
         if (ret == E_TOO_MANY_REQ){
             sleep(1);
             continue;
         }
         break;
     }    
+    if (ret == E_SUCCESS)
+        ret = m->parsed_length;
+    messageReset(m);
+    return ret;
+}
+
+int send_to(const char *request, struct network *net, char **resp){
+    int ret = socketWrite(request, strlen(request), net->ssl);
+    if (ret != E_SUCCESS){
+        return E_SEND;
+    }
+    while(1) {
+        ret = socketRead(net);
+        if (ret == E_TOO_MANY_REQ){
+            sleep(1);
+            continue;
+        }
+        break;
+    }    
+    struct message *m = (struct message *)net->parser->data;
+    if (ret == E_SUCCESS) {
+        ret = m->parsed_length + 1;
+        m->body[ret-1] = '\0';
+        *resp = malloc(ret);
+        MALLOC_ERROR_CHECK(*resp);
+        memcpy(*resp, m->body, ret);
+    }
+    messageReset(m);
     return ret;
 }
 
 static void messageReset(struct message *m){
     m->status = 0;
-    memset(m->body, 0, m->body_size);
-    m->content_length = 0;
+    if (m->body != 0) {
+        free(m->body);
+        m->body = 0;
+    }
+    m->body_size = 0;
     m->parsed_length = 0;
     m->last_header_element = 0;
     m->num_headers = 0;
-
-    m->message_begin_cb_called = 0;
     m->message_complete_cb_called = 0;
-    m->headers_complete_cb_called = 0;
+    m->isToFile = 0; 
+    m->file = 0;
 
-    m->chunked = 0;
-    m->chunk_length = 0;
-    
     for (int i=0; i< MAX_HEADERS_COUNT; i++){
         memset(m->headers[i][0], 0, MAX_ELEMENT_HEADER_SIZE);
         memset(m->headers[i][1], 0, MAX_ELEMENT_HEADER_SIZE);
@@ -352,8 +304,6 @@ int initNetworkStruct(struct network **netw){
     MALLOC_ERROR_CHECK(net);
 
     memset(net, 0, sizeof(struct network));
-    net->read = malloc(RECEIVE_BUFFER_SIZE);
-    MALLOC_ERROR_CHECK(net->read);
 
     http_parser_settings *settings;
     http_parser *parser;
@@ -368,8 +318,8 @@ int initNetworkStruct(struct network **netw){
     settings->on_headers_complete = on_headers_complete;
     settings->on_body = on_body;
     settings->on_message_complete = on_message_complete;
-    settings->on_chunk_header = on_chunk_header;
-    settings->on_chunk_complete = on_chunk_complete;
+    //settings->on_chunk_header = on_chunk_header;
+    //settings->on_chunk_complete = on_chunk_complete;
 
     parser = malloc(sizeof(http_parser));
     MALLOC_ERROR_CHECK(parser);
@@ -378,11 +328,7 @@ int initNetworkStruct(struct network **netw){
 
     struct message *m = malloc(sizeof(struct message));
     MALLOC_ERROR_CHECK(m);
-    m->body_size = BODY_SIZE;
-    m->body = malloc(m->body_size);
-    MALLOC_ERROR_CHECK(m->body);
-    messageReset(m);
-
+    memset(m, 0, sizeof(struct message));
     parser->data = m;
     net->parser = parser;
     net->settings = settings;
@@ -400,8 +346,6 @@ void freeNetworkStruct(struct network *net){
     free(parser);
     free(settings);
 
-    free(net->read);
-    
     SSL_free(net->ssl);
     close(net->socket_peer);
     SSL_CTX_free(net->ctx);

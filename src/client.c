@@ -1,7 +1,8 @@
 #include"client.h"
 
-static int webdavGet(struct network *net, const char *filepath, char **file);
-static int webdavPropfind(struct network *net, const char *filepath, char **file);
+static int webdavGet(struct network *net, const char *remotePath, char **resp);
+static int webdavGet1(struct network *net, const char *remotePath, char *remoteMD5);
+static int webdavPropfind(struct network *net, const char *remotePath, char **resp);
 
 static int estConnection(struct network **net);
 
@@ -9,37 +10,20 @@ static void parseXML(xmlNode *a_node, Node *node, QNode *qnode, int fifo);
 static int createFolderNode(Node *node, struct network *net, int fifo);
 
 
-static int webdavGet(struct network *net, const char *filepath, char **file) {
+static int webdavGet(struct network *net, const char *remotePath, char **resp) {
     const char *req = "GET %s HTTP/1.1\r\n"
 		              "Host: %s\r\n"
                       "Accept: */*\r\n"
                       "Authorization: OAuth %s\r\n\r\n";
-    ssize_t headerLen = snprintf(NULL, 0, req, filepath, WHOST, TOKEN) + 1; 
-    char *header = 0;
-    int isMall = 0;
-    if (HEADER_LEN < headerLen) {
-        header = malloc(headerLen);
-        MALLOC_ERROR_CHECK(header);
-        isMall = 1;
-    } else {
-        header = alloca(headerLen);
-    }
-
-    int len = snprintf(header, headerLen, req, filepath, WHOST, TOKEN);
+    ssize_t headerLen = snprintf(NULL, 0, req, remotePath, WHOST, TOKEN) + 1; 
+    char *header = malloc(headerLen);
+    MALLOC_ERROR_CHECK(header);
+    int len = snprintf(header, headerLen, req, remotePath, WHOST, TOKEN);
     if (len < 0 || len >= headerLen)
         return E_SPRINTF;
-
-    int res = send_to(header, len, net);
-    if (isMall)
-        free(header);
-    
-    if (res != E_SUCCESS)
-        return res;
-
-    struct message *m = (struct message *)net->parser->data;
-    *file = m->body;
-
-    return m->parsed_length;
+    len = send_to(header, net, resp);
+    free(header);
+    return len;
 }
 
 static int webdavGet1(struct network *net, const char *remotePath, char *remoteMD5) {
@@ -59,6 +43,8 @@ static int webdavGet1(struct network *net, const char *remotePath, char *remoteM
                 return -1111;
             }
             // TODO: check if remoteMD5 is null-term
+            printf("remote: %s\n", remoteMD5);
+            printf("local: %s\n", md5str);
             if (strcmp(md5str, remoteMD5) == 0) {
                 printf("File %s not changed\n", remotePath);
                 //file the same
@@ -81,12 +67,11 @@ static int webdavGet1(struct network *net, const char *remotePath, char *remoteM
     ssize_t headerLen = snprintf(NULL, 0, req, remotePath, WHOST, TOKEN) + 1; 
     char *header = malloc(headerLen);
     MALLOC_ERROR_CHECK(header);
-    ssize_t len = snprintf(header, headerLen, req, remotePath, WHOST, TOKEN);
+    int len = snprintf(header, headerLen, req, remotePath, WHOST, TOKEN);
     if (len < 0 || len >= headerLen)
         return E_SPRINTF;
 
-    int res = send_to1(header, net, file);
-
+    len = send_to1(header, net, file);
     fclose(file);
     free(header);
 
@@ -94,46 +79,26 @@ static int webdavGet1(struct network *net, const char *remotePath, char *remoteM
         remove(localPath);
         rename(newPath, localPath);
     }
-    if (res != E_SUCCESS)
-        return res;
-
-    return 123;
+    return len;
 }
 
-static int webdavPropfind(struct network *net, const char *filepath, char **file) {
+static int webdavPropfind(struct network *net, const char *remotePath, char **resp) {
     const char *req = "PROPFIND %s HTTP/1.1\r\n"
                       "Host: %s\r\n"
                       "Accept: */*\r\n"
                       "Depth: 1\r\n"
                       "Authorization: OAuth %s\r\n\r\n";
-    ssize_t headerLen = snprintf(NULL, 0, req, filepath, WHOST, TOKEN) + 1; 
-    char *header = 0;
-    int isMall = 0;
-    if (HEADER_LEN < headerLen) {
-        header = malloc(headerLen);
-        MALLOC_ERROR_CHECK(header);
-        isMall = 1;
-    } else {
-        header = alloca(headerLen);
-    }
-
-    int len = snprintf(header, headerLen, req, filepath, WHOST, TOKEN);
+    ssize_t headerLen = snprintf(NULL, 0, req, remotePath, WHOST, TOKEN) + 1; 
+    char *header = malloc(headerLen);
+    MALLOC_ERROR_CHECK(header);
+    int len = snprintf(header, headerLen, req, remotePath, WHOST, TOKEN);
     if (len < 0 || len >= headerLen)
         return E_SPRINTF;
-
-    int res = send_to(header, len, net);
-    if (isMall)
-        free(header);
-    
-    if (res != E_SUCCESS)
-        return res;
-
-    struct message *m = (struct message *)net->parser->data;
-    *file = m->body;
-
-    return m->parsed_length;
+    len = send_to(header, net, resp);
+    free(header);
+    return len;
 }
-
+/*
 int getSpaceInfo(struct network *net) {
     char *body = "<?xml version=\"1.0\" ?>"
                  "<D:propfind xmlns:D=\"DAV:\">"
@@ -148,13 +113,14 @@ int getSpaceInfo(struct network *net) {
     snprintf(sendline, MAXLINE,
 		"PROPFIND / HTTP/1.1\r\n"
 		"Host: %s\r\n"
-        "Accept: */*\r\n"
+        "Accept: **\r\n" // не забыть добавить черту
         "Depth: 0\r\n"
         "Content-Type: text/xml\r\n"
         "Content-Length: %ld\r\n"
         "Authorization: OAuth %s\r\n\r\n%s",  WHOST, strlen(body), TOKEN, body);
 
-    int res = send_to(sendline, strlen(sendline), net);
+    int res = send_to(sendline, net, 0);
+    free(sendline);
     if (res != E_SUCCESS) {
         return 0;
     }
@@ -164,7 +130,6 @@ int getSpaceInfo(struct network *net) {
         return 0;
     return 0;
 }
-/*
 
 int getToken(){
     SSL *ssl = 0;
@@ -320,6 +285,7 @@ static int createFolderNode(Node *node, struct network *net, int fifo) {
     //
     LIBXML_TEST_VERSION
     xmlDoc *doc = xmlParseDoc((const unsigned char*)body);
+    free(body);
     xmlNode *root = xmlDocGetRootElement(doc);
     parseXML(root, node, 0, fifo); 
     xmlFreeNode(root);

@@ -29,4 +29,4 @@ else()
 endif()
 
 target_link_libraries(${PROJECT_NAME} ${OPENSSL_LIBRARIES} ${LIBXML2_LIBRARIES})
-target_compile_options(${PROJECT_NAME} PUBLIC -Wall)
+target_compile_options(${PROJECT_NAME} PUBLIC -Wall -g)

@@ -17,6 +17,7 @@
 
 #include<libxml/parser.h>
 #include<libxml/tree.h>
+#include<assert.h>
 
 #include"error.h"
 
@@ -42,28 +43,23 @@ struct network {
     SSL *ssl;
     SSL_CTX *ctx; 
     int socket_peer;
-
-    char *read;
 };
 
 struct message {
-  int status;
-  int content_length;
-
   char *body;
-  int body_size;
-  int parsed_length;
+  FILE *file;
+
+  int body_size; // sizeof allocated memory for *body
+  int parsed_length; //sizeof parsed data in *body
+  int isToFile; // is need to write to file
+  
+  int status;
+  int message_complete_cb_called;
 
   int num_headers;
   enum { NONE=0, FIELD, VALUE } last_header_element;
   char headers[MAX_HEADERS_COUNT][2][MAX_ELEMENT_HEADER_SIZE];
 
-  int message_begin_cb_called;
-  int headers_complete_cb_called;
-  int message_complete_cb_called;
-
-  int chunked;
-  int chunk_length;
 };
 
 int on_chunk_header(http_parser *parser);
@@ -77,9 +73,8 @@ int on_body(http_parser *parser, const char* data, size_t length);
         
 int connect_to(struct network *net, const char *host);
 
-int send_to(const char *request, size_t size, struct network *net);
+int send_to(const char *request, struct network *net, char **resp);
+int send_to1(const char *request, struct network *net, FILE *file);
 
 int initNetworkStruct(struct network **netw);
 void freeNetworkStruct(struct network *net);
-
-int send_to1(const char *request, struct network *net, FILE *file);
