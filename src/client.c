@@ -1,4 +1,23 @@
+#include<sys/types.h>
+#include<stdio.h>
+#include<stdlib.h>
+#include<string.h>
+#include<fcntl.h>
+#include<unistd.h>
+#include<sys/wait.h>
+#include<sys/stat.h>
+
+#include<openssl/ssl.h>
+#include<openssl/err.h>
+#include<openssl/md5.h>
+
+#include<libxml/parser.h>
+#include<libxml/tree.h>
+
+#include"../lib/http-parser/http_parser.h"
+#include"network.h"
 #include"client.h"
+#include"error.h"
 
 static int webdavGet(struct network *net, const char *remotePath, char **resp);
 static int webdavGet1(struct network *net, const char *remotePath, char *remoteMD5);
@@ -8,7 +27,7 @@ static int estConnection(struct network **net);
 
 static void parseXML(xmlNode *a_node, Node *node, QNode *qnode, int fifo);
 static int createFolderNode(Node *node, struct network *net, int fifo);
-
+static char* getMD5sum(const char *path);
 
 static int webdavGet(struct network *net, const char *remotePath, char **resp) {
     const char *req = "GET %s HTTP/1.1\r\n"
@@ -300,7 +319,6 @@ static int createFolderNode(Node *node, struct network *net, int fifo) {
     return 0;
 }
 
-#define MD5_UPDATE_LEN 1024 
 static char* getMD5sum(const char *path){
     FILE *filefd = fopen(path, "rb");
     if (filefd == 0){
@@ -377,17 +395,8 @@ int saveFiles(struct network *net, int fifo){
     Queue *q = initQueue();
     QNode *n = 0;
     QNode tmpn = {0};
-    char *file = 0;
-    char *md5str = 0;
     char path[MAX_PATH_LEN] = DOWNLOAD_PATH; 
-    int fdd, len, fsize;
-    char ex = 0;
 
-
-    char newPath[1000]; 
-    char name[50];
-    char *pos = 0;
-    int last;
     for (;;) {
         while (read(fifo, &tmpn, sizeof tmpn) > 0) {
             addToQueue(q, &tmpn);

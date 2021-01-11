@@ -1,6 +1,8 @@
+#include<stdio.h>
+#include<stdlib.h>
+#include<string.h>
+#include<errno.h>
 #include"error.h"
-
-static const char* getError(error_t err);
 
 static const char* getError(error_t err){
     if (err > ERROR_COUNT && err - MIN_ERR_ENUM < 0)

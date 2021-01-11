@@ -1,13 +1,11 @@
-#include<stdio.h>
-#include<stdlib.h>
-#include<string.h>
-#include<errno.h>
+#ifndef ERROR_H
+#define ERROR_H
 
 #define MIN_ERR_ENUM -100
-
 #define MALLOC_ERROR_CHECK(p) {\
         if (p == 0) {\
-            return E_MALLOC_FAILED;\
+            fprintf(stderr, "** Error: Out of memory - (%d: %s)\n", errno, strerror(errno));\
+            exit(EXIT_FAILURE);\
         }\
 }
 
@@ -58,3 +56,5 @@ void logMessage(const char *msg);
 
 void logErrno(const char *mes);
 void logSyncErr(const char *file, error_t err);
+
+#endif // ERROR_H

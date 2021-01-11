@@ -1,21 +1,8 @@
-#include<sys/types.h>
-#include<stdio.h>
-#include<stdlib.h>
-#include<string.h>
-#include<fcntl.h>
-#include<unistd.h>
-#include<sys/wait.h>
-#include<sys/stat.h>
+#ifndef CLIENT_H
+#define CLIENT_H
 
-// TODO: Add ifndef ?
-#include<openssl/ssl.h>
-#include<openssl/err.h>
 #include<openssl/md5.h>
-
-#include<libxml/parser.h>
-#include<libxml/tree.h>
-
-#include"../lib/http-parser/http_parser.h"
+#include<stdlib.h>
 #include"network.h"
 
 #define CLIENT_ID "9d2223ab8e334c92bf2584a1e9a9516b"
@@ -33,6 +20,8 @@
 #define FIFO_PATH "./fifo"
 #define DOWNLOAD_PATH "/home/roman/Documents/clang/yandexDiskWebDav/build"
 #define MAX_PATH_LEN 500
+
+#define MD5_UPDATE_LEN 1024 
 
 //TODO: char href[S_ITEM_LEN] - S_ITEM_LEN must be variable
 //int href_len
@@ -80,6 +69,4 @@ QNode* getFromQueue(Queue *queue);
 
 int synchronize(const char *rootPath);
 
-
-
-static char* getMD5sum(const char *path);
+#endif

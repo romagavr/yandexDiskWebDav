@@ -1,27 +1,10 @@
-#include<sys/types.h>
-#include<sys/socket.h>
-#include<netinet/in.h>
-#include<arpa/inet.h>
-#include<netdb.h>
-#include<unistd.h>
-#include<errno.h>
+#ifndef NETWORK_H
+#define NETWORK_H
 
-#include<stdio.h>
-#include<stdlib.h>
-#include<string.h>
-#include<time.h>
-
+#include"../lib/http-parser/http_parser.h"
 #include<openssl/ssl.h>
 #include<openssl/err.h>
 #include<openssl/md5.h>
-
-#include<libxml/parser.h>
-#include<libxml/tree.h>
-#include<assert.h>
-
-#include"error.h"
-
-#include"../lib/http-parser/http_parser.h"
 
 #define HOST "oauth.yandex.ru"
 #define WHOST "webdav.yandex.ru"
@@ -78,3 +61,5 @@ int send_to1(const char *request, struct network *net, FILE *file);
 
 int initNetworkStruct(struct network **netw);
 void freeNetworkStruct(struct network *net);
+
+#endif // NETWORK_H
