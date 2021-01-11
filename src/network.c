@@ -13,10 +13,7 @@
 
 #include<libxml/parser.h>
 #include<libxml/tree.h>
-
-
 #include"error.h"
-
 #include"network.h"
 
 
@@ -206,6 +203,7 @@ static int socketRead(struct network *net){
         bytes_rec = SSL_read(net->ssl, readbuf, RECEIVE_BUFFER_SIZE);
         if (bytes_rec > 0) {
             nparsed = http_parser_execute(net->parser, net->settings, readbuf, bytes_rec);
+            //printf("%s/n", readbuf);
             if (net->parser->http_errno != 0 || nparsed != bytes_rec){
                 ret = E_HTTP_PARSER_FAILED;
                 break;
@@ -221,6 +219,9 @@ static int socketRead(struct network *net){
                         break;
                     case 400:
                         ret = E_HTTP_STAT_400;
+                        break;
+                    case 403:
+                        ret = E_HTTP_STAT_403;
                         break;
                     case 404:
                         ret = E_HTTP_STAT_404;

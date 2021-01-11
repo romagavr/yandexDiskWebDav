@@ -22,6 +22,7 @@ typedef enum errors {
     E_SPRINTF,
     E_HTTP_STAT_400,
     E_HTTP_STAT_404,
+    E_HTTP_STAT_403,
     E_FIFO_OPEN,
     E_FIFO_CLOSE,
     E_SYNC_ERROR,
@@ -43,6 +44,7 @@ static const char *const errArr[] =
     "Sprintf error",
     "Http error - (400) Bad request",
     "Http error - (404) Not found",
+    "Http error - (403) Forbidden",
     "Error while opening FIFO",
     "Error while closinging FIFO",
     "Synchronization error"
