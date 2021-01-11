@@ -1,6 +1,8 @@
+#include<stdio.h>
+#include<stdlib.h>
+#include<string.h>
+#include<errno.h>
 #include"error.h"
-
-static const char* getError(error_t err);
 
 static const char* getError(error_t err){
     if (err > ERROR_COUNT && err - MIN_ERR_ENUM < 0)
@@ -31,9 +33,9 @@ void logMessage(const char *msg){
 // client.c
 
 void logErrno(const char *mes){
-    fprintf(stderr, "** (%s) - Errno: (%d: %s)\n", mes, errno, strerror(errno));
+    fprintf(stderr, "Fatal Error: %s(%d) - (%s)\n", mes, errno, strerror(errno));
 };
 
 void logSyncErr(const char *file, error_t err){
-    fprintf(stderr, "** Sync error while getting %s: (%d) - %s;\n", file, err, getError(err));
+    fprintf(stderr, "Sync error while getting \"%s\": %s;\n", file, getError(err));
 };

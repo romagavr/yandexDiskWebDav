@@ -1,4 +1,23 @@
+#include<sys/types.h>
+#include<stdio.h>
+#include<stdlib.h>
+#include<string.h>
+#include<fcntl.h>
+#include<unistd.h>
+#include<sys/wait.h>
+#include<sys/stat.h>
+
+#include<openssl/ssl.h>
+#include<openssl/err.h>
+#include<openssl/md5.h>
+
+#include<libxml/parser.h>
+#include<libxml/tree.h>
+
+#include"../lib/http-parser/http_parser.h"
+#include"network.h"
 #include"client.h"
+#include"error.h"
 
 static int webdavGet(struct network *net, const char *remotePath, char **resp);
 static int webdavGet1(struct network *net, const char *remotePath, char *remoteMD5);
@@ -8,7 +27,7 @@ static int estConnection(struct network **net);
 
 static void parseXML(xmlNode *a_node, Node *node, QNode *qnode, int fifo);
 static int createFolderNode(Node *node, struct network *net, int fifo);
-
+static char* getMD5sum(const char *path);
 
 static int webdavGet(struct network *net, const char *remotePath, char **resp) {
     const char *req = "GET %s HTTP/1.1\r\n"
@@ -231,8 +250,9 @@ QNode* getFromQueue(Queue *queue) {
 }
 
 static void parseXML(xmlNode *a_node, Node *node, QNode *qnode, int fifo) {
-    if (qnode == 0){
+    if (!qnode){
         qnode = malloc(sizeof *qnode);
+        MALLOC_ERROR_CHECK(qnode);
     }
 
     int resp = (strcmp((const char *)a_node->name, "response") == 0) ? 1 : 0;
@@ -280,7 +300,8 @@ static int createFolderNode(Node *node, struct network *net, int fifo) {
     int res = 0;
     if ((res = webdavPropfind(net, node->href, &body)) < 0)
         return res;
-
+    //printf("%.10s\n", body);
+    //exit(EXIT_FAILURE);
     // TODO: Free *doc
     //
     LIBXML_TEST_VERSION
@@ -300,7 +321,6 @@ static int createFolderNode(Node *node, struct network *net, int fifo) {
     return 0;
 }
 
-#define MD5_UPDATE_LEN 1024 
 static char* getMD5sum(const char *path){
     FILE *filefd = fopen(path, "rb");
     if (filefd == 0){
@@ -310,30 +330,18 @@ static char* getMD5sum(const char *path){
 
     unsigned char md5_hash[MD5_DIGEST_LENGTH];
     char *md5_string = malloc(MD5_DIGEST_LENGTH * 2 + 1);
-    if (md5_string == 0){
-        fprintf(stderr, "Malloc failed. (%d)\n", errno);
-        return 0;
-    }
-    MD5_CTX md5;
-    if (MD5_Init(&md5) == 0){
-        fprintf(stderr, "MD5_Init failed. (%d)\n", errno);
-        return 0;
-    };
+    MALLOC_ERROR_CHECK(md5_string);
 
-    if (MD5_Init(&md5) == 0){
-        fprintf(stderr, "MD5_Init failed. (%d)\n", errno);
-        return 0;
-    };
+    MD5_CTX md5;
+    if (!MD5_Init(&md5)) return 0;
+
     int bytes;
     char raw[MD5_UPDATE_LEN];
-    while ((bytes = fread(raw, 1, MD5_UPDATE_LEN, filefd)) != 0)
-        MD5_Update (&md5, raw, bytes);
+    while ((bytes = fread(raw, 1, MD5_UPDATE_LEN, filefd)))
+        MD5_Update(&md5, raw, bytes);
     fclose(filefd);
 
-    if (MD5_Final(md5_hash, &md5) == 0){
-        fprintf(stderr, "MD5_Final failed. (%d)\n", errno);
-        return 0;
-    };
+    if (!MD5_Final(md5_hash, &md5)) return 0;
 
     for (int i = 0; i < MD5_DIGEST_LENGTH; ++i)
         sprintf(&md5_string[i*2], "%02x", (unsigned int)md5_hash[i]);
@@ -377,17 +385,8 @@ int saveFiles(struct network *net, int fifo){
     Queue *q = initQueue();
     QNode *n = 0;
     QNode tmpn = {0};
-    char *file = 0;
-    char *md5str = 0;
     char path[MAX_PATH_LEN] = DOWNLOAD_PATH; 
-    int fdd, len, fsize;
-    char ex = 0;
 
-
-    char newPath[1000]; 
-    char name[50];
-    char *pos = 0;
-    int last;
     for (;;) {
         while (read(fifo, &tmpn, sizeof tmpn) > 0) {
             addToQueue(q, &tmpn);
@@ -498,6 +497,96 @@ int synchronize(const char *rootPath){
         fprintf(stderr, "Error while closing FIFO; (%d): %s\n", errno, strerror(errno));
         return 1;
     }
+    return 0;
+}
+
+int fileUpload(const char *filePath, const char *remotePath) {
+    int res;
+    struct network *net = 0;
+    if ((res = estConnection(&net) != E_SUCCESS)) {
+        logLibError(res, 0);
+        return res;
+    } 
+
+    FILE *fd = fopen(filePath, "rb");
+    if (fd == 0) return -1;
+
+    fseek(fd, 0, SEEK_END);
+    long int fsize = ftell(fd);
+    if (fsize == -1){
+        fclose(fd);
+        return -1;
+    }
+    rewind(fd);
+
+    unsigned char *file = malloc(fsize);
+    MALLOC_ERROR_CHECK(file);
+    //SSL *ssl = net->ssl;
+
+    char *md5_string = getMD5sum(filePath);
+    if (!md5_string) return -1;
+
+    char sha256[SHA256_DIGEST_LENGTH];
+    SHA256_CTX sha;
+    if (!SHA256_Init(&sha) || !SHA256_Update(&sha, file, strlen(file)) || !SHA256_Final(sha256, &sha))
+        return -1;
+
+    char sha256_string[SHA256_DIGEST_LENGTH * 2 + 1];
+    for (int i = 0; i < SHA256_DIGEST_LENGTH; ++i)
+        sprintf(&sha256_string[i*2], "%02x", (unsigned int)sha256[i]);
+
+
+    const char *req = "PUT %s HTTP/1.1\r\n"
+                      "Host: %s\r\n"
+                      "Accept: */*\r\n"
+                      "Authorization: OAuth %s\r\n"
+                      "Etag: %s\r\n"
+                      "Sha256: %s\r\n"
+                      "Expect: 100-continue\r\n"
+                      "Content-Type: application/binary\r\n"
+                      "Content-Length: %d\r\n\r\n";
+
+    ssize_t headerLen = snprintf(NULL, 0, req, remotePath, WHOST, TOKEN, md5_string, sha256_string, fsize) + 1; 
+    char *header = malloc(headerLen);
+    MALLOC_ERROR_CHECK(header);
+    int len = snprintf(header, headerLen, req, remotePath, WHOST, TOKEN, md5_string, sha256_string, fsize);
+    free(md5_string);
+    if (len < 0 || len >= headerLen)
+        return E_SPRINTF;
+
+    size_t packetLen = headerLen + file_size - 1;
+    char *packet = 0;
+    if (MAXLINE < packetLen) {
+        packet = malloc(packetLen);
+        if (packet == 0){
+            fprintf(stderr, "Malloc() failed. (%d)\n", errno);
+            return -1;
+        }
+    } else {
+        packet = alloca(packetLen);
+    }
+    memcpy(packet, header, headerLen);
+    memcpy(packet + headerLen, file, file_size);
+
+    // TODO обработка ошибок чтения/записи в сокет
+    // TODO парсинг ответа
+    //  https://github.com/nodejs/http-parser
+    char *read = malloc(MAXLINE+1);
+    if (read == 0)
+        return -1;
+
+    ssize_t bytes_reseived = socketWrite(packet, packetLen, net);
+
+    ////// 
+    int bytes_sent, bytes_received; 
+
+    bytes_sent = SSL_write(ssl, packet, packetLen);
+    bytes_received = SSL_read(ssl, read, MAXLINE);
+    printf("Received (%d bytes): %.*s", bytes_received, bytes_received, read);
+    if (bytes_received < 1) 
+	    printf("Connection closed by peer.\n");
+    ////////
+
     return 0;
 }
 

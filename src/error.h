@@ -1,13 +1,11 @@
-#include<stdio.h>
-#include<stdlib.h>
-#include<string.h>
-#include<errno.h>
+#ifndef ERROR_H
+#define ERROR_H
 
 #define MIN_ERR_ENUM -100
-
 #define MALLOC_ERROR_CHECK(p) {\
         if (p == 0) {\
-            return E_MALLOC_FAILED;\
+            fprintf(stderr, "** Error: Out of memory - (%d: %s)\n", errno, strerror(errno));\
+            exit(EXIT_FAILURE);\
         }\
 }
 
@@ -24,6 +22,7 @@ typedef enum errors {
     E_SPRINTF,
     E_HTTP_STAT_400,
     E_HTTP_STAT_404,
+    E_HTTP_STAT_403,
     E_FIFO_OPEN,
     E_FIFO_CLOSE,
     E_SYNC_ERROR,
@@ -45,6 +44,7 @@ static const char *const errArr[] =
     "Sprintf error",
     "Http error - (400) Bad request",
     "Http error - (404) Not found",
+    "Http error - (403) Forbidden",
     "Error while opening FIFO",
     "Error while closinging FIFO",
     "Synchronization error"
@@ -58,3 +58,5 @@ void logMessage(const char *msg);
 
 void logErrno(const char *mes);
 void logSyncErr(const char *file, error_t err);
+
+#endif // ERROR_H
