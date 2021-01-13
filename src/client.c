@@ -329,7 +329,6 @@ static char* getMD5sum(const char *path){
         return 0;
     }
 
-    unsigned char md5_hash[MD5_DIGEST_LENGTH];
     char *md5_string = malloc(MD5_DIGEST_LENGTH * 2 + 1);
     MALLOC_ERROR_CHECK(md5_string);
 
@@ -342,12 +341,52 @@ static char* getMD5sum(const char *path){
         MD5_Update(&md5, raw, bytes);
     fclose(filefd);
 
+    unsigned char md5_hash[MD5_DIGEST_LENGTH];
     if (!MD5_Final(md5_hash, &md5)) return 0;
 
     for (int i = 0; i < MD5_DIGEST_LENGTH; ++i)
         sprintf(&md5_string[i*2], "%02x", (unsigned int)md5_hash[i]);
     md5_string[MD5_DIGEST_LENGTH * 2] = '\0';
     return md5_string;
+}
+
+static size_t getShaMD5(const char *path, char **sha256S, char **md5S){
+    FILE *fd = fopen(path, "rb");
+    if (!fd) return 0;
+
+    MD5_CTX md5;
+    SHA256_CTX sha;
+    if (!MD5_Init(&md5) || !SHA256_Init(&sha)) return 0;
+
+    size_t bytes, total=0;
+    unsigned char raw[MD5_UPDATE_LEN];
+    while ((bytes = fread(raw, 1, MD5_UPDATE_LEN, fd))) {
+        if (!MD5_Update(&md5, raw, bytes) || !SHA256_Update(&sha, raw, bytes)) {
+            fclose(fd);
+            return 0;
+        }
+        total+=bytes;
+    }
+    fclose(fd);
+
+    unsigned char md5_hash[MD5_DIGEST_LENGTH];
+    unsigned char sha256[SHA256_DIGEST_LENGTH];
+    if (!MD5_Final(md5_hash, &md5) || !SHA256_Final(sha256, &sha)) return 0;
+
+    char *md5_string = malloc(MD5_DIGEST_LENGTH * 2 + 1);
+    MALLOC_ERROR_CHECK(md5_string);
+    char *sha256_string = malloc(SHA256_DIGEST_LENGTH * 2 + 1);
+    MALLOC_ERROR_CHECK(sha256_string);
+
+    for (int i = 0; i < MD5_DIGEST_LENGTH; ++i)
+        sprintf(&md5_string[i*2], "%02x", (unsigned int)md5_hash[i]);
+    for (int i = 0; i < SHA256_DIGEST_LENGTH; ++i)
+        sprintf(&sha256_string[i*2], "%02x", (unsigned int)sha256[i]);
+    md5_string[MD5_DIGEST_LENGTH * 2] = sha256_string[SHA256_DIGEST_LENGTH*2] = '\0';
+    *sha256S = sha256_string;
+    *md5S = md5_string;
+
+    return total;
 }
 
 static int getFileRaw(const char *path, char **out){
@@ -537,6 +576,7 @@ int fileUpload(const char *filePath, const char *remotePath) {
         return res;
     } 
 
+<<<<<<< HEAD
     FILE *fd = fopen(filePath, "rb");
     if (fd == 0) return -1;
 
@@ -554,6 +594,11 @@ int fileUpload(const char *filePath, const char *remotePath) {
     char *sha256_string = getSha256(filePath);
     if (!sha256_string) return -1;
 
+=======
+    char *sha = 0, *md5 = 0;
+    size_t fsize = getShaMD5(filePath, &sha, &md5);
+    if (!fsize) return 0;
+>>>>>>> dev3
 
     const char *req = "PUT %s HTTP/1.1\r\n"
                       "Host: %s\r\n"
@@ -564,15 +609,16 @@ int fileUpload(const char *filePath, const char *remotePath) {
                       "Expect: 100-continue\r\n"
                       "Content-Type: application/binary\r\n"
                       "Content-Length: %d\r\n\r\n";
-
-    ssize_t headerLen = snprintf(NULL, 0, req, remotePath, WHOST, TOKEN, md5_string, sha256_string, fsize) + 1; 
+    ssize_t headerLen = snprintf(NULL, 0, req, remotePath, WHOST, TOKEN, md5, sha, fsize) + 1; 
     char *header = malloc(headerLen);
     MALLOC_ERROR_CHECK(header);
-    int len = snprintf(header, headerLen, req, remotePath, WHOST, TOKEN, md5_string, sha256_string, fsize);
-    free(md5_string);
-    if (len < 0 || len >= headerLen)
+    ssize_t len = snprintf(header, headerLen, req, remotePath, WHOST, TOKEN, md5, sha, fsize) + 1; 
+    free(md5);
+    free(sha);
+    if (len < 0 || len > headerLen)
         return E_SPRINTF;
 
+<<<<<<< HEAD
     char *resp;
     int ret = send_to(header, net, resp);
     if (ret != E_SUCCESS) return -1;
@@ -584,6 +630,19 @@ int fileUpload(const char *filePath, const char *remotePath) {
     size_t packetLen = headerLen + file_size - 1;
     char *packet = malloc(packetLen);
     MALLOC_ERROR_CHECK(packet);
+=======
+    char *resp = 0;
+    res = send_to(header, net, &resp);
+    if (res > 0){
+        struct message *m = (struct message *)net->parser->data;
+        printf("%d", m->status);
+        exit(EXIT_SUCCESS);
+    }
+    //free(header);
+
+/*
+    size_t packetLen = headerLen + fsize - 1;
+>>>>>>> dev3
     char *packet = 0;
     if (MAXLINE < packetLen) {
         packet = malloc(packetLen);
@@ -615,7 +674,7 @@ int fileUpload(const char *filePath, const char *remotePath) {
     if (bytes_received < 1) 
 	    printf("Connection closed by peer.\n");
     ////////
-
+*/
     return 0;
 }
 
