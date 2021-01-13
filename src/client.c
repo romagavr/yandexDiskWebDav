@@ -576,29 +576,9 @@ int fileUpload(const char *filePath, const char *remotePath) {
         return res;
     } 
 
-<<<<<<< HEAD
-    FILE *fd = fopen(filePath, "rb");
-    if (fd == 0) return -1;
-
-    fseek(fd, 0, SEEK_END);
-    long int fsize = ftell(fd);
-    if (fsize == -1){
-        fclose(fd);
-        return -1;
-    }
-    rewind(fd);
-
-    char *md5_string = getMD5sum(filePath);
-    if (!md5_string) return -1;
-
-    char *sha256_string = getSha256(filePath);
-    if (!sha256_string) return -1;
-
-=======
     char *sha = 0, *md5 = 0;
     size_t fsize = getShaMD5(filePath, &sha, &md5);
     if (!fsize) return 0;
->>>>>>> dev3
 
     const char *req = "PUT %s HTTP/1.1\r\n"
                       "Host: %s\r\n"
@@ -618,19 +598,6 @@ int fileUpload(const char *filePath, const char *remotePath) {
     if (len < 0 || len > headerLen)
         return E_SPRINTF;
 
-<<<<<<< HEAD
-    char *resp;
-    int ret = send_to(header, net, resp);
-    if (ret != E_SUCCESS) return -1;
-    struct message *m = (struct message *)net->parser->data;
-    if (m->status == 100) {
-        //upload file;
-    }
-
-    size_t packetLen = headerLen + file_size - 1;
-    char *packet = malloc(packetLen);
-    MALLOC_ERROR_CHECK(packet);
-=======
     char *resp = 0;
     res = send_to(header, net, &resp);
     if (res > 0){
@@ -642,7 +609,6 @@ int fileUpload(const char *filePath, const char *remotePath) {
 
 /*
     size_t packetLen = headerLen + fsize - 1;
->>>>>>> dev3
     char *packet = 0;
     if (MAXLINE < packetLen) {
         packet = malloc(packetLen);
