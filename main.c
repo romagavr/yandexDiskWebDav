@@ -2,10 +2,13 @@
 
 int main(int argc, char *argv[]){
 
-    int sync = 1;
+    int sync = 0;
+    int upload = 1;
     const char *target = "/test";
     if (sync)
         synchronize(target);
+    if (upload) 
+        fileUpload("/home/roman/Documents/clang/yandexDiskWebDav/build/test/2.png", "/");
     // без слэша в начале  - 400
     // если нет такой директории - 404
     // в остальных случаях - 207

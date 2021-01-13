@@ -54,7 +54,7 @@ struct file_system{
 
 int getToken(void);
 //void traverseXML(xmlNode *a_node, struct item *head);
-int fileUpload(const char *file, long int file_size, const char *remPath, struct network *net); 
+int fileUpload(const char *filePath, const char *remotePath); 
 int uploadFile(const char *localPath, const char *remotePath, struct network *net);
 
 
