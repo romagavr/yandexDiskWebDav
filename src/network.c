@@ -250,6 +250,29 @@ static int socketWrite(const char *request, size_t size, SSL *ssl){
     return E_SUCCESS;
 }
 
+int send_to2(const char *request, struct network *net, FILE *file){
+    struct message *m = (struct message *)net->parser->data;
+    m->file = file;
+    m->isToFile = 1;
+
+    int ret = socketWrite(request, strlen(request), net->ssl);
+    if (ret != E_SUCCESS){
+        return E_SEND;
+    }
+    while(1) {
+        ret = socketRead(net);
+        if (ret == E_TOO_MANY_REQ){
+            sleep(1);
+            continue;
+        }
+        break;
+    }    
+    if (ret == E_SUCCESS)
+        ret = m->parsed_length;
+    messageReset(m);
+    return ret;
+}
+
 int send_to1(const char *request, struct network *net, FILE *file){
     struct message *m = (struct message *)net->parser->data;
     m->file = file;

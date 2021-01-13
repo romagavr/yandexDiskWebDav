@@ -113,6 +113,7 @@ static int webdavPropfind(struct network *net, const char *remotePath, char **re
     int len = snprintf(header, headerLen, req, remotePath, WHOST, TOKEN);
     if (len < 0 || len >= headerLen)
         return E_SPRINTF;
+    //TODO: error checking
     len = send_to(header, net, resp);
     free(header);
     return len;
@@ -335,7 +336,7 @@ static char* getMD5sum(const char *path){
     MD5_CTX md5;
     if (!MD5_Init(&md5)) return 0;
 
-    int bytes;
+    size_t bytes;
     char raw[MD5_UPDATE_LEN];
     while ((bytes = fread(raw, 1, MD5_UPDATE_LEN, filefd)))
         MD5_Update(&md5, raw, bytes);
@@ -500,6 +501,34 @@ int synchronize(const char *rootPath){
     return 0;
 }
 
+static char* getSha256(const char *path){
+    FILE *fd = fopen(path, "rb");
+    if (!fd){
+        fprintf(stderr, "fopen failed. (%d)\n", errno);
+        return 0;
+    }
+
+    char sha256[SHA256_DIGEST_LENGTH];
+    SHA256_CTX sha;
+    if (!SHA256_Init(&sha)) return 0;
+        
+    size_t bytes;
+    char raw[MD5_UPDATE_LEN];
+    while ((bytes = fread(raw, 1, MD5_UPDATE_LEN, fd)))
+        if (!SHA256_Update(&sha, raw, bytes)) return 0;
+    fclose(fd);
+
+    if (!SHA256_Final(sha256, &sha)) return 0;
+
+    char *sha256_string = malloc(SHA256_DIGEST_LENGTH * 2 + 1);
+    MALLOC_ERROR_CHECK(sha256_string);
+
+    for (int i = 0; i < SHA256_DIGEST_LENGTH; ++i)
+        sprintf(&sha256_string[i*2], "%02x", (unsigned int)sha256[i]);
+
+    return sha256_string;
+}
+
 int fileUpload(const char *filePath, const char *remotePath) {
     int res;
     struct network *net = 0;
@@ -519,21 +548,11 @@ int fileUpload(const char *filePath, const char *remotePath) {
     }
     rewind(fd);
 
-    unsigned char *file = malloc(fsize);
-    MALLOC_ERROR_CHECK(file);
-    //SSL *ssl = net->ssl;
-
     char *md5_string = getMD5sum(filePath);
     if (!md5_string) return -1;
 
-    char sha256[SHA256_DIGEST_LENGTH];
-    SHA256_CTX sha;
-    if (!SHA256_Init(&sha) || !SHA256_Update(&sha, file, strlen(file)) || !SHA256_Final(sha256, &sha))
-        return -1;
-
-    char sha256_string[SHA256_DIGEST_LENGTH * 2 + 1];
-    for (int i = 0; i < SHA256_DIGEST_LENGTH; ++i)
-        sprintf(&sha256_string[i*2], "%02x", (unsigned int)sha256[i]);
+    char *sha256_string = getSha256(filePath);
+    if (!sha256_string) return -1;
 
 
     const char *req = "PUT %s HTTP/1.1\r\n"
@@ -554,7 +573,17 @@ int fileUpload(const char *filePath, const char *remotePath) {
     if (len < 0 || len >= headerLen)
         return E_SPRINTF;
 
+    char *resp;
+    int ret = send_to(header, net, resp);
+    if (ret != E_SUCCESS) return -1;
+    struct message *m = (struct message *)net->parser->data;
+    if (m->status == 100) {
+        //upload file;
+    }
+
     size_t packetLen = headerLen + file_size - 1;
+    char *packet = malloc(packetLen);
+    MALLOC_ERROR_CHECK(packet);
     char *packet = 0;
     if (MAXLINE < packetLen) {
         packet = malloc(packetLen);
