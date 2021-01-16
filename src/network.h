@@ -58,6 +58,7 @@ int connect_to(struct network *net, const char *host);
 
 int send_to(const char *request, struct network *net, char **resp);
 int send_to1(const char *request, struct network *net, FILE *file);
+int sendFile(const char *filePath, struct network *net);
 
 int initNetworkStruct(struct network **netw);
 void freeNetworkStruct(struct network *net);

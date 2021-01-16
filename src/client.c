@@ -579,6 +579,7 @@ int fileUpload(const char *filePath, const char *remotePath) {
     char *sha = 0, *md5 = 0;
     size_t fsize = getShaMD5(filePath, &sha, &md5);
     if (!fsize) return 0;
+    //printf("%s : %s : %d", sha, md5, fsize);
 
     const char *req = "PUT %s HTTP/1.1\r\n"
                       "Host: %s\r\n"
@@ -600,9 +601,8 @@ int fileUpload(const char *filePath, const char *remotePath) {
 
     char *resp = 0;
     res = send_to(header, net, &resp);
-    if (res > 0){
-        struct message *m = (struct message *)net->parser->data;
-        printf("%d", m->status);
+    if (res == 100){
+        sendFile(filePath, net);
         exit(EXIT_SUCCESS);
     }
     //free(header);

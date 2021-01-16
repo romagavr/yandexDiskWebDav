@@ -8,7 +8,7 @@ int main(int argc, char *argv[]){
     if (sync)
         synchronize(target);
     if (upload) 
-        fileUpload("/home/roman/Documents/clang/yandexDiskWebDav/build/test/2.png", "/");
+        fileUpload("/home/roman/Documents/clang/yandexDiskWebDav/build/test/romanroman", "/14545.txt");
     // без слэша в начале  - 400
     // если нет такой директории - 404
     // в остальных случаях - 207

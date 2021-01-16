@@ -203,12 +203,12 @@ static int socketRead(struct network *net){
         bytes_rec = SSL_read(net->ssl, readbuf, RECEIVE_BUFFER_SIZE);
         if (bytes_rec > 0) {
             nparsed = http_parser_execute(net->parser, net->settings, readbuf, bytes_rec);
-            //printf("%s/n", readbuf);
+            printf("%s/n", readbuf);
             if (net->parser->http_errno != 0 || nparsed != bytes_rec){
                 ret = E_HTTP_PARSER_FAILED;
                 break;
             }
-            if (m->message_complete_cb_called && (m->status == 207 || m->status == 200)){
+            if (m->message_complete_cb_called && (m->status == 207 || m->status == 200 || m->status == 201 || m->status == 100)){
                 ret = E_SUCCESS;
                 break;
             } else if (m->status != 207 && m->status != 200) {
@@ -225,6 +225,9 @@ static int socketRead(struct network *net){
                         break;
                     case 404:
                         ret = E_HTTP_STAT_404;
+                        break;
+                    case 409:
+                        ret = E_HTTP_STAT_409;
                         break;
                     default:
                         break;
@@ -250,12 +253,24 @@ static int socketWrite(const char *request, size_t size, SSL *ssl){
     return E_SUCCESS;
 }
 
-int send_to2(const char *request, struct network *net, FILE *file){
-    struct message *m = (struct message *)net->parser->data;
-    m->file = file;
-    m->isToFile = 1;
+static int socketWriteToFile(const char *filePath, SSL *ssl){
+    FILE *fd = fopen(filePath, "rb");
+    if (!fd) return -1;
+    size_t bytes;
+    char raw[100];
+    int bytes_sent = 0;
+    //int bytes_sent = SSL_write(ssl, request, strlen(request));
+    while((bytes = fread(raw, 1, 100, fd))){
+        bytes_sent = SSL_write(ssl, raw, bytes);
+    }
+    fclose(fd);
+    if (bytes_sent <= 0)
+        return getSSLerror(ssl, bytes_sent);
+    return E_SUCCESS;
+}
 
-    int ret = socketWrite(request, strlen(request), net->ssl);
+int sendFile(const char *filePath, struct network *net) {
+    int ret = socketWriteToFile(filePath, net->ssl);
     if (ret != E_SUCCESS){
         return E_SEND;
     }
@@ -267,8 +282,10 @@ int send_to2(const char *request, struct network *net, FILE *file){
         }
         break;
     }    
-    if (ret == E_SUCCESS)
-        ret = m->parsed_length;
+    struct message *m = (struct message *)net->parser->data;
+    if (ret == E_SUCCESS) {
+        ret = m->status;
+    }
     messageReset(m);
     return ret;
 }
@@ -311,11 +328,14 @@ int send_to(const char *request, struct network *net, char **resp){
     }    
     struct message *m = (struct message *)net->parser->data;
     if (ret == E_SUCCESS) {
-        ret = m->parsed_length + 1;
-        m->body[ret-1] = '\0';
-        *resp = malloc(ret);
-        MALLOC_ERROR_CHECK(*resp);
-        memcpy(*resp, m->body, ret);
+        if (m->body) {
+            ret = m->parsed_length + 1;
+            m->body[ret-1] = '\0';
+            *resp = malloc(ret);
+            MALLOC_ERROR_CHECK(*resp);
+            memcpy(*resp, m->body, ret);
+        }
+        ret = m->status;
     }
     messageReset(m);
     return ret;
