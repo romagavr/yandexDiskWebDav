@@ -20,8 +20,8 @@
 static int getSSLerror(SSL *ssl, int ret);
 static void messageReset(struct message *m);
 
-static int socketRead(struct network *net);
-static int socketWrite(const char *request, size_t size, SSL *ssl);
+static Response* socketRead(struct network *net);
+static inline Response* getResponse(struct network *net);
 
 /*
 int on_chunk_header(http_parser *parser) {
@@ -191,162 +191,125 @@ static int getSSLerror(SSL *ssl, int ret){
     return r_error;
 }
 
-static int socketRead(struct network *net){
-    size_t bytes_rec, nparsed, total_rec = 0;
-    int ret;
+static Response* socketRead(struct network *net){
+    size_t bytes, nparsed, total_rec = 0;
+    int ret=0;
     struct message *m = (struct message *)net->parser->data;
-    char *readbuf = malloc(RECEIVE_BUFFER_SIZE);
-    MALLOC_ERROR_CHECK(readbuf);
+    char *raw = malloc(RECEIVE_BUFFER_SIZE);
+    MALLOC_ERROR_CHECK(raw);
+    Response *resp = malloc(sizeof(Response));
+    MALLOC_ERROR_CHECK(resp);
+    memset(resp, 0, sizeof(Response));
 
     // TODO: Timeout - если долго нет ответа
-    while (1){
-        bytes_rec = SSL_read(net->ssl, readbuf, RECEIVE_BUFFER_SIZE);
-        if (bytes_rec > 0) {
-            nparsed = http_parser_execute(net->parser, net->settings, readbuf, bytes_rec);
-            printf("%s/n", readbuf);
-            if (net->parser->http_errno != 0 || nparsed != bytes_rec){
-                ret = E_HTTP_PARSER_FAILED;
-                break;
+    while ((bytes = SSL_read(net->ssl, raw, RECEIVE_BUFFER_SIZE)) > 0){
+        nparsed = http_parser_execute(net->parser, net->settings, raw, bytes);
+        if (net->parser->http_errno != 0 || nparsed != bytes)
+            resp->status = E_HTTP_PARSER_FAILED;
+        //printf("%s/n", readbuf);
+        /*
+        if (m->message_complete_cb_called && (m->status == 207 || m->status == 200 || m->status == 201 || m->status == 100)){
+            ret = E_SUCCESS;
+            break;
+        } else if (m->status != 207 && m->status != 200) {
+            switch (m->status)
+            {
+                case 429:
+                    ret = E_TOO_MANY_REQ;
+                    break;
+                case 400:
+                    ret = E_HTTP_STAT_400;
+                    break;
+                case 403:
+                    ret = E_HTTP_STAT_403;
+                    break;
+                case 404:
+                    ret = E_HTTP_STAT_404;
+                    break;
+                case 409:
+                    ret = E_HTTP_STAT_409;
+                    break;
+                default:
+                    break;
             }
-            if (m->message_complete_cb_called && (m->status == 207 || m->status == 200 || m->status == 201 || m->status == 100)){
-                ret = E_SUCCESS;
-                break;
-            } else if (m->status != 207 && m->status != 200) {
-                switch (m->status)
-                {
-                    case 429:
-                        ret = E_TOO_MANY_REQ;
-                        break;
-                    case 400:
-                        ret = E_HTTP_STAT_400;
-                        break;
-                    case 403:
-                        ret = E_HTTP_STAT_403;
-                        break;
-                    case 404:
-                        ret = E_HTTP_STAT_404;
-                        break;
-                    case 409:
-                        ret = E_HTTP_STAT_409;
-                        break;
-                    default:
-                        break;
-                }
-                break;
-            }
-        } else {
-            ret = getSSLerror(net->ssl, bytes_rec);
             break;
         }
-    }  
-    free(readbuf);
-    return ret;
+        */
+    }
+
+   if (!resp->status) {
+        if (!bytes) {
+            if (m->isToFile) {
+                resp->data = m->body;
+                resp->dataLen = m->body_size;
+            }
+            resp->status = m->status;
+ 
+        } else resp->status = getSSLerror(net->ssl, bytes);;
+    }
+    free(raw);
+    return resp;
 }
 
-static int socketWrite(const char *request, size_t size, SSL *ssl){
-    int bytes_sent = 0;
-
-    bytes_sent = SSL_write(ssl, request, size);
-    if (bytes_sent <= 0) {
-        return getSSLerror(ssl, bytes_sent);
-    }  
-    return E_SUCCESS;
-}
-
-static int socketWriteToFile(const char *filePath, SSL *ssl){
-    FILE *fd = fopen(filePath, "rb");
-    if (!fd) return -1;
-    size_t bytes;
+//int sendFile(const char *filePath, struct network *net)
+Response* requestFM(FILE *fd, struct network *net){
+    Response *resp;
+    size_t b, bSent;
     char raw[100];
-    int bytes_sent = 0;
-    //int bytes_sent = SSL_write(ssl, request, strlen(request));
-    while((bytes = fread(raw, 1, 100, fd))){
-        bytes_sent = SSL_write(ssl, raw, bytes);
+    while((b = fread(raw, 1, 100, fd))){
+        bSent = SSL_write(net->ssl, raw, b);
     }
-    fclose(fd);
-    if (bytes_sent <= 0)
-        return getSSLerror(ssl, bytes_sent);
-    return E_SUCCESS;
+    if (bSent >= 0) {
+        resp = getResponse(net);
+    } else {
+        resp = malloc(sizeof(Response));
+        MALLOC_ERROR_CHECK(resp);
+        memset(resp, 0, sizeof(Response));
+        resp->status = getSSLerror(net->ssl, b);
+    }
+    return resp;
 }
 
-int sendFile(const char *filePath, struct network *net) {
-    int ret = socketWriteToFile(filePath, net->ssl);
-    if (ret != E_SUCCESS){
-        return E_SEND;
-    }
-    while(1) {
-        ret = socketRead(net);
-        if (ret == E_TOO_MANY_REQ){
-            sleep(1);
-            continue;
-        }
-        break;
-    }    
+//Response* send_to1(const char *mes, struct network *net, FILE *file){
+Response* requestMF(const char *mes, struct network *net, FILE *fd){
     struct message *m = (struct message *)net->parser->data;
-    if (ret == E_SUCCESS) {
-        ret = m->status;
-    }
-    messageReset(m);
-    return ret;
-}
-
-int send_to1(const char *request, struct network *net, FILE *file){
-    struct message *m = (struct message *)net->parser->data;
-    m->file = file;
+    m->file = fd;
     m->isToFile = 1;
-
-    int ret = socketWrite(request, strlen(request), net->ssl);
-    if (ret != E_SUCCESS){
-        return E_SEND;
-    }
-    while(1) {
-        ret = socketRead(net);
-        if (ret == E_TOO_MANY_REQ){
-            sleep(1);
-            continue;
-        }
-        break;
-    }    
-    if (ret == E_SUCCESS)
-        ret = m->parsed_length;
-    messageReset(m);
-    return ret;
+    return requestMM(mes, net);
 }
 
-int send_to(const char *request, struct network *net, char **resp){
-    int ret = socketWrite(request, strlen(request), net->ssl);
-    if (ret != E_SUCCESS){
-        return E_SEND;
-    }
+//int send_to(const char *request, struct network *net, char **resp)
+Response* requestMM(const char *mes, struct network *net){
+    int b;
+    Response *resp;
+
+    if ((b = SSL_write(net->ssl, mes, strlen(mes))) <= 0) {
+        resp = malloc(sizeof(Response));
+        MALLOC_ERROR_CHECK(resp);
+        memset(resp, 0, sizeof(Response));
+        resp->status = getSSLerror(net->ssl, b);
+    } else 
+        resp = getResponse(net);
+    return resp;
+}
+
+static inline Response* getResponse(struct network *net) {
+    Response *resp;
     while(1) {
-        ret = socketRead(net);
-        if (ret == E_TOO_MANY_REQ){
+        resp = socketRead(net);
+        if (resp->status == E_TOO_MANY_REQ){
             sleep(1);
             continue;
         }
         break;
     }    
-    struct message *m = (struct message *)net->parser->data;
-    if (ret == E_SUCCESS) {
-        if (m->body) {
-            ret = m->parsed_length + 1;
-            m->body[ret-1] = '\0';
-            *resp = malloc(ret);
-            MALLOC_ERROR_CHECK(*resp);
-            memcpy(*resp, m->body, ret);
-        }
-        ret = m->status;
-    }
-    messageReset(m);
-    return ret;
+    messageReset((struct message *)net->parser->data);
+    return resp;
 }
 
 static void messageReset(struct message *m){
     m->status = 0;
-    if (m->body != 0) {
-        free(m->body);
-        m->body = 0;
-    }
+    m->body = 0;
     m->body_size = 0;
     m->parsed_length = 0;
     m->last_header_element = 0;

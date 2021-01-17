@@ -45,6 +45,13 @@ struct message {
 
 };
 
+typedef struct response {
+  char *data;
+  size_t dataLen;
+  int status;
+} Response;
+
+
 int on_chunk_header(http_parser *parser);
 int on_chunk_complete(http_parser *parser);
 int on_header_field(http_parser *parser, const char *data, size_t length); 
@@ -56,9 +63,9 @@ int on_body(http_parser *parser, const char* data, size_t length);
         
 int connect_to(struct network *net, const char *host);
 
-int send_to(const char *request, struct network *net, char **resp);
-int send_to1(const char *request, struct network *net, FILE *file);
-int sendFile(const char *filePath, struct network *net);
+Response* requestMM(const char *mes, struct network *net);
+Response* requestFM(FILE *fd, struct network *net);
+Response* requestMF(const char *mes, struct network *net, FILE *fd);
 
 int initNetworkStruct(struct network **netw);
 void freeNetworkStruct(struct network *net);
